@@ -67,7 +67,7 @@ else:
 server = Server(None, None)
 pool = None
 
-for i in range(0):
+for i in range(3):
     try:
         wifi.radio.connect(
             os.getenv("CIRCUITPY_WIFI_SSID"), os.getenv("CIRCUITPY_WIFI_PASSWORD")
