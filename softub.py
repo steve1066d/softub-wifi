@@ -6,12 +6,12 @@ from ticks import calc_due_ticks_ms, calc_due_ticks, is_due
 class Softub:
     # After the up or down arrows is pressed to change the temperature, show the
     # set temp for this long
-    show_setting_seconds = 5
+    show_setting_seconds = 8
     # The amount of time to show "P" instead of the actual temp.  Stock is 2 minutes
     # I think its better to use 0, even though it will show low temps.
     p_setting_seconds = 2 * 60
     # The last set temparature returned by board
-    board_led_temp = 99
+    board_led_temp = 102
     # The temperature to report to the top unit
     top_led_temp = 0
     # Sent by newer boards for when pump isn't running.
@@ -20,6 +20,7 @@ class Softub:
     polling_ms = 333
     debug_buttons = None
     debug_board = str(board_led_temp)
+    display_callback = None
 
     # A copy of the LED's on the top unit
     display_buffer = bytearray([0x02, 0x00, 0x01, 0x00, 0x00, 0x01, 0xFF])
@@ -42,7 +43,7 @@ class Softub:
     button_up = 0x04
     button_down = 0x08
 
-    def __init__(self, board_tx, board_rx, top_tx, top_rx):
+    def __init__(self, board_tx, board_rx, top_tx, top_rx, display_callback=None, led=None):
         self.uart_board = busio.UART(
             board_tx, board_rx, baudrate=2400, receiver_buffer_size=13
         )
@@ -50,7 +51,8 @@ class Softub:
             top_tx, top_rx, baudrate=2400, receiver_buffer_size=1
         )
         self.due = calc_due_ticks(0)
-        print("due", self.due)
+        self.display_callback = display_callback
+        self.led = led
 
     ###
     #  Methods to read state from Softub
@@ -60,8 +62,11 @@ class Softub:
     def read_buttons(self):
         if is_due(self.end_show_setting_seconds):
             self.end_show_setting_seconds = 0
-        if self.uart_top.in_waiting:
-            raw = self.uart_top.read(1)[0]
+        while self.uart_top.in_waiting:
+            if self.led:
+                self.led.value = False
+            while self.uart_top.in_waiting:
+                raw = self.uart_top.read(1)[0]
             # The 4 button bits are replicated and inverted between the
             # low and high nybbles
             # Check that they match, and extract just one copy.
@@ -82,9 +87,17 @@ class Softub:
     # Updates from the board to the LED
     def read_board(self):
         while self.uart_board.in_waiting > 6:
-            raw = self.uart_board.read(7)
+            if self.led:
+                self.led.value = True
+            # If we are behind, catch up
+            while self.uart_board.in_waiting > 6:
+                raw = self.uart_board.read(7)
             while raw[0] != 0x02 or raw[6] != 0xFF:
-                raw = raw[1:].append(self.uart_board.read(1)[0])
+                byte = self.uart_board.read(1)
+                # timeout, so bail
+                if byte:
+                    return
+                raw = bytearray(raw)[1:].extend(byte)
             sum = 0
             self.display_p = False
             for i in range(1, 5):
@@ -118,6 +131,9 @@ class Softub:
     def is_heat(self):
         return self.board_buffer[1] & 0x20
 
+    def is_filter(self):
+        return self.board_buffer[1] & 0x10
+
     def get_temp(self):
         return self.board_led_temp
 
@@ -132,10 +148,8 @@ class Softub:
 
     def display_temperature(self, tempF):
         temp = int(round(tempF))
-        h = temp % 100
-        if temp < 100:
-            h = 0x0A
-        self.display_set_digits(h, int((tempF / 10) % 10), int(tempF % 10))
+        h = 0x0A if temp < 100 else temp // 100
+        self.display_set_digits(h, int((tempF // 10) % 10), int(tempF % 10))
 
     # Values in digit places:
     # 0 - 9 - digit
@@ -170,6 +184,7 @@ class Softub:
             sum += self.display_buffer[i]
         self.display_buffer[5] = sum & 0xFF
         self.uart_top.write(self.display_buffer)
+#        print('s', self.display_buffer, sum, sum & 0xFF)
 
     def debug(self):
         return self.debug_board
@@ -178,12 +193,16 @@ class Softub:
         encoded = (self.button_state << 4) | (self.button_state ^ 0x0F)
         self.uart_board.write(bytes([encoded]))
         if is_due(self.button_timeout):
-            self.button_state = 0
+            if self.button_state == 0:
+                self.button_timeout = 0
+            else:
+                self.button_state = 0
+                self.button_timeout = calc_due_ticks_ms(self.polling_ms)
 
     # The callback to update. The default is to echo
     def callback(self):
-        self.display_buffer = self.board_buffer[:]
-        self.top_buttons = self.button_state
+        self.display_buffer = bytearray(self.board_buffer[:])
+        self.button_state = self.top_buttons
         self.button_timeout = self.due
 
     def poll(self):
@@ -191,6 +210,9 @@ class Softub:
         self.read_board()
         if is_due(self.due):
             self.due += self.polling_ms
-            self.callback()
+            if self.display_callback:
+                self.display_callback()
+            else:
+                self.callback()
             self.fn_top_update()
             self.fn_board_update()
