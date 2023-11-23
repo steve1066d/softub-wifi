@@ -1,6 +1,6 @@
 import busio
 import supervisor
-from ticks import calc_due_ticks_ms, calc_due_ticks, is_due
+from ticks import calc_due_ticks_ms, calc_due_ticks_sec, is_due
 
 
 class Softub:
@@ -42,6 +42,7 @@ class Softub:
     button_light = 0x02
     button_up = 0x04
     button_down = 0x08
+    last_tick = 0
 
     def __init__(self, board_tx, board_rx, top_tx, top_rx, display_callback=None, led=None):
         self.uart_board = busio.UART(
@@ -50,7 +51,7 @@ class Softub:
         self.uart_top = busio.UART(
             top_tx, top_rx, baudrate=2400, receiver_buffer_size=1
         )
-        self.due = calc_due_ticks(0)
+        self.due = calc_due_ticks_sec(0)
         self.display_callback = display_callback
         self.led = led
 
@@ -78,9 +79,11 @@ class Softub:
             else:
                 print("Received invalid button: "+str(raw))
                 return
+            if new_buttons:
+                print("button", new_buttons)
             if self.top_buttons and (self.button_up | self.button_down):
                 # If up or down arrows were pressed, show set temp
-                self.end_show_setting_seconds = calc_due_ticks(
+                self.end_show_setting_seconds = calc_due_ticks_sec(
                     self.show_setting_seconds - 0.5
                 )
 
@@ -95,9 +98,11 @@ class Softub:
             while raw[0] != 0x02 or raw[6] != 0xFF:
                 byte = self.uart_board.read(1)
                 # timeout, so bail
-                if byte:
+                if not byte:
                     return
-                raw = bytearray(raw)[1:].extend(byte)
+                raw = bytearray(raw[1:])
+                raw.extend(byte)
+                raw = list(raw)
             sum = 0
             self.display_p = False
             for i in range(1, 5):
@@ -184,7 +189,7 @@ class Softub:
             sum += self.display_buffer[i]
         self.display_buffer[5] = sum & 0xFF
         self.uart_top.write(self.display_buffer)
-#        print('s', self.display_buffer, sum, sum & 0xFF)
+        #print(" ".join("%02x" % b for b in self.display_buffer))
 
     def debug(self):
         return self.debug_board
@@ -192,6 +197,7 @@ class Softub:
     def fn_board_update(self):
         encoded = (self.button_state << 4) | (self.button_state ^ 0x0F)
         self.uart_board.write(bytes([encoded]))
+        #print(encoded)
         if is_due(self.button_timeout):
             if self.button_state == 0:
                 self.button_timeout = 0
@@ -209,7 +215,9 @@ class Softub:
         self.read_buttons()
         self.read_board()
         if is_due(self.due):
-            self.due += self.polling_ms
+            while is_due(self.due):
+                self.due += self.polling_ms
+            self.last_tick = supervisor.ticks_ms()
             if self.display_callback:
                 self.display_callback()
             else:

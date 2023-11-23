@@ -1,43 +1,54 @@
+"""Softub WiFi Adapter"""
 
-"""Softub control fiddler"""
-
+from mqtt import mqtt_connect, mqtt_poll, mqtt_button_light
 import adafruit_ntp
 import board
+import busio
 import json
 import math
 import microcontroller
-import mdns
 import os
-import struct
 import rtc
 import socketpool
 import supervisor
 import time
 import wifi
+import digitalio
 from analogio import AnalogOut
 from adafruit_httpserver import Server, Request, Response, POST
 from softub import Softub
-from ticks import calc_due_ticks, is_due, ticks_diff, ticks_add
-from mqtt import mqtt_connect, mqtt_poll, mqtt_button_light
-import displayio
-import terminalio
-import neopixel
+from ticks import calc_due_ticks_sec, is_due, ticks_diff, ticks_add
+#import neopixel
 import adafruit_ads1x15.ads1115 as ADS
 from analogio import AnalogIn
 from adafruit_ads1x15.analog_in import AnalogIn as AnalogInI2C
 from adafruit_simplemath import map_unconstrained_range
 import traceback
+import adafruit_ad569x
+import storage
 
+
+disable_httpd = False
 try:
-    with open("test.tmp", "w") as f:
-        writable = True
-except OSError:
-    writable = False
-if writable:
+    with open("/firmware.txt", "r") as f:
+        disable_httpd = True
+except Exception as e:
+    print(e)
+disable_httpd = False
+
+print("disable httpd", disable_httpd)
+
+config = None
+try:
+    storage.remount("/", False)
+    writable = True
     with open("config.json", "r") as f:
         config = json.load(f)
-else:
+except Exception as e:
+    print(e)
+    writable = False
     print("Could not write to nvram.  Using defaults")
+if not config:
     config = {
         # The target temp.
         "target_temp": 102,
@@ -45,78 +56,98 @@ else:
         "unit": "F",
         # how often the temperature should be checked
         "poll_seconds": 1,
-        # If the tub temp is below this value, it will pass the temp unchanged
-        # controller
-        "min_override_temp": 100,
-        # The temperature to send to the controller when the pump should turn on.
-        "override_on_temp": 99,
-        # The temperature to send to the controller when the pump should turn off
-        "override_off_temp": 105,
-        # once the temp has been reached, how much must the temp
-        # go down before it is turned on again
-        "hysteresis": 0.5,
         # the degree increment the + and - buttons should use on the web page
+        # and softub buttons
         "increment": 0.5,
         # Minimum allowable target temperature
         "minimum_temp": 50,
         # Maximum allowable target temperature
-        "maximum_temp": 105,
+        "maximum_temp": 106,
         "show_settings_seconds": 5,
     }
 # No user servicable parts below
+
+A0 = board.IO1
+A1 = board.IO2
+A2 = board.IO3
+# there seems to be a default pullup resistor that is interfering with this,
+# so do this even if we we are using an i2c a2d.
+analog_in = AnalogIn(A2)
+dummy = AnalogIn(A1)
+
 server = Server(None, None)
 pool = None
 
-for i in range(3):
-    try:
-        wifi.radio.connect(
-            os.getenv("CIRCUITPY_WIFI_SSID"), os.getenv("CIRCUITPY_WIFI_PASSWORD")
-        )
-        print(f"Connected to {os.getenv('CIRCUITPY_WIFI_SSID')}")
-        print(f"My IP address: {wifi.radio.ipv4_address}")
-        mdns_server = mdns.Server(wifi.radio)
-        hostname = os.getenv("CIRCUITPY_WEB_INSTANCE_NAME")
-        mdns_server.hostname = hostname
-        mdns_server.advertise_service(service_type="_http", protocol="_tcp", port=80)
-        print(f"mdns name: {hostname}.local")
-        pool = socketpool.SocketPool(wifi.radio)
+wifi.radio.connect(
+    os.getenv("CIRCUITPY_WIFI_SSID"), os.getenv("CIRCUITPY_WIFI_PASSWORD")
+)
+print(f"Connected to {os.getenv('CIRCUITPY_WIFI_SSID')}")
+print(f"My IP address: {wifi.radio.ipv4_address}")
+hostname = os.getenv("CIRCUITPY_WEB_INSTANCE_NAME")
+
+if disable_httpd:
+    print("Disabling httpd and mqtt")
+else:
+    for i in range(3):
         try:
-            ntp = adafruit_ntp.NTP(pool, tz_offset=-5)
-            rtc.RTC().datetime = ntp.datetime
+            # mdns_server = mdns.Server(wifi.radio)
+            # mdns_server.hostname = hostname
+            # mdns_server
+            #  .advertise_service(service_type="_http", protocol="_tcp", port=80)
+            # print(f"mdns name: {hostname}.local")
+            pool = socketpool.SocketPool(wifi.radio)
+            try:
+                ntp = adafruit_ntp.NTP(pool, tz_offset=-5)
+                rtc.RTC().datetime = ntp.datetime
+            except Exception as e:
+                traceback.print_exception(e)
+            server = Server(pool, "/static", debug=True)
+
+            print("date", time.localtime())
+            server.start(str(wifi.radio.ipv4_address))
+            print("Listening on http://%s:80" % wifi.radio.ipv4_address)
+            break
         except Exception as e:
             traceback.print_exception(e)
-        server = Server(pool, "/static", debug=True)
-
-        print("date", time.localtime())
-        server.start(str(wifi.radio.ipv4_address))
-        print("Listening on http://%s:80" % wifi.radio.ipv4_address)
-        break;
-    except Exception as e:
-        traceback.print_exception(e)
-        time.sleep(10)
+            time.sleep(10)
 
 top_buttons_ms = 0
 repeating = None
 temp_reads = []
 set_point_timeout = 0
 
-led = neopixel.NeoPixel(board.NEOPIXEL, 1)
+#led = neopixel.NeoPixel(board.NEOPIXEL, 1)
+#led = digitalio.DigitalInOut(board.LED)
 
-analog_out = AnalogOut(board.A1)
+# analog_out = AnalogOut(board.A1)
 
 current_temp = 0
 # report this temp to the board
 report_temp = 0
 
+validate_analog = None
 try:
-    i2c = board.I2C()  # uses board.SCL and board.SDA
+    i2c = busio.I2C(board.IO6, board.IO5)  # uses board.SCL and board.SDA
+    print ("scan")
+    #print (i2c.scan())
     ads = ADS.ADS1115(i2c)
-    analog_in = AnalogInI2C(ads, ADS.P0)
+    analog_in = AnalogInI2C(ads, ADS.P0)  # 0x48
+    print("i2c A2D found")
     validate_analog = AnalogInI2C(ads, ADS.P1)
 except Exception as e:
+    traceback.print_exception(e)
     print("Could not find i2c adc, using internal")
-    analog_in = AnalogIn(board.A2)
+try:
+    analog_out = adafruit_ad569x.Adafruit_AD569x(i2c)  # 0x4C
+    print("i2c DAC found")
+    max_analog_out = 2.5
+    # this dac is already accurate
     validate_analog = None
+except Exception:
+    print("Could not find i2c dac, using internal")
+    # analog_out = AnalogOut(A1)
+    analog_out = None
+    max_analog_out = 3.3
 
 
 def callback():
@@ -136,6 +167,7 @@ def callback():
                 print("inc")
             elif softub.top_buttons == softub.button_light:
                 mqtt_button_light()
+                pass
             # set the timer if a button is held down
             if repeating:
                 repeating = ticks_add(supervisor.ticks_ms(), 300)
@@ -146,7 +178,10 @@ def callback():
     top_buttons_ms = softub.top_buttons_ms
     if adjust:
         set_target(config["target_temp"] + adjust)
-    elif softub.top_buttons != softub.button_down or softub.top_buttons != softub.button_up:
+    elif (
+        softub.top_buttons != softub.button_down
+        or softub.top_buttons != softub.button_up
+    ):
         # some other button was pressed.  Just send it to the controller.
         softub.button_state = softub.top_buttons
         if softub.button_state:
@@ -173,7 +208,6 @@ def callback():
         set_point_timeout = 0
         softub.display_temperature(math.floor(current_temp))
         softub.display_filter(current_temp > math.floor(current_temp))
-    softub.display_filter(softub.is_filter())
     softub.display_heat(softub.is_heat())
 
 def to_F(c_deg: float):
@@ -194,12 +228,12 @@ def set_target(deg: float):
     deg = max(deg, config["minimum_temp"])
     deg = min(deg, config["maximum_temp"])
     config["target_temp"] = deg
-    set_point_timeout = calc_due_ticks(config["show_settings_seconds"])
+    set_point_timeout = calc_due_ticks_sec(config["show_settings_seconds"])
     save_config()
 
 
 def get_temperature() -> float:
-    if hasattr(analog_in, 'voltage'):
+    if hasattr(analog_in, "voltage"):
         x = analog_in.voltage * 100
     else:
         x = analog_in.value / 65535 * 3.3 * 100
@@ -226,31 +260,16 @@ def save_config():
         pass
         clock = 0
 
-def set_temperature(temp: float):
-    adj_out = map_unconstrained_range(98, map_98, 104, map_104, temp)
-    x = int(adj_out / 3.3 * 655.35)
-    analog_out.value = x
 
-# Use the a2d converter to determine the actual values to use
-# for the dac conversion
-def _calibrate(value):
-    delta = 0.0
-    old_error = 100.0
-    error = old_error - 1
-    old_delta = 0
-    while math.fabs(old_error) > math.fabs(error):
-        old_error = error
-        analog_out.value = int((value + delta) / 3.3 * 655.35)
-        time.sleep(.1)
-        new_value = validate_analog.voltage * 100 + delta
-        new_value += validate_analog.voltage * 100 + delta
-        new_value /= 2
-        error = value - new_value
-        old_delta = delta
-        delta += error
-        # print("d,e", old_error, error)
-    print()
-    return value + old_delta
+def set_temperature(temp: float):
+    if analog_out:
+        print(temp)
+        adj_out = map_unconstrained_range(temp, 98, 104, map_98, map_104)
+        print("out", adj_out)
+        #temp = 50
+        x = int(adj_out / max_analog_out * 655.35)
+        analog_out.value = x
+
 
 def webpage():
     html = f"""
@@ -297,6 +316,11 @@ def webpage():
     """
     return html
 
+@server.route("/firmware")
+def firmware(request: Request):
+    os.rename("/code.py", "/code.bak")
+    os.sync()
+    microcontroller.reset()
 
 @server.route("/")
 def base(request: Request):
@@ -309,14 +333,6 @@ def base(request: Request):
             "cpu": to_F(microcontroller.cpu.temperature),
         }
         return Response(request, json.dumps(value), content_type="text/json")
-
-
-@server.route("/firmware")
-def firmware(request: Request):
-    # renames the application so the web workflow works.
-    os.rename("/code.py", "/code.bak")
-    microcontroller.reset()
-
 
 @server.route("/", POST)
 def buttonpress(request: Request):
@@ -334,8 +350,32 @@ def buttonpress(request: Request):
     clock = 0
     print("set", config["target_temp"])
 
+
+# Use the a2d converter to determine the actual values to use
+# for the dac conversion
+def _calibrate(value):
+    delta = 0.0
+    old_error = 100.0
+    error = old_error - 1
+    old_delta = 0
+    while math.fabs(old_error) > math.fabs(error):
+        old_error = error
+        analog_out.value = int((value + delta) / 3.3 * 655.35)
+        time.sleep(0.1)
+        new_value = validate_analog.voltage * 100 + delta
+        new_value += validate_analog.voltage * 100 + delta
+        new_value /= 2
+        error = value - new_value
+        old_delta = delta
+        delta += error
+        # print("d,e", old_error, error)
+    print()
+    return value + old_delta
+
+
 try:
-    softub = Softub(board.TX, board.RX, board.MOSI, board.MISO, callback)
+    # board 1.0 has rx & tx backwards, so reverse them
+    softub = Softub(board.IO8, board.IO9, board.RX, board.TX, callback)
     if pool:
         mqtt_connect(pool, set_target)
     if validate_analog:
@@ -345,48 +385,30 @@ try:
     else:
         map_98 = 98
         map_104 = 104
-        print("Using internal adc, no calibration")
+        print("Not using i2c adc with internal dac, no calibration")
 
     if config["unit"] == "C":
-        config["min_override_temp"] = to_F(config["min_override_temp"])
-        config["override_on_temp"] = to_F(config["override_on_temp"])
-        config["override_off_temp"] = to_F(config["override_off_temp"])
         config["target_temp"] = to_F(config["target_temp"])
         config["hysteresis"] *= 9 / 5
         config["increment"] *= 9 / 5
-    temp_due = calc_due_ticks(config["poll_seconds"])
+    temp_due = calc_due_ticks_sec(config["poll_seconds"])
     uart_clock = 0
 
     while True:
+        tt = config["target_temp"]
         if is_due(temp_due):
-            temp_due = calc_due_ticks(config["poll_seconds"])
+            temp_due = calc_due_ticks_sec(config["poll_seconds"])
             temp = get_temperature()
             set_current_temp(temp)
-            if current_temp <= config["min_override_temp"]:
-                # Allow the tub to operate normally if it hasn't hit the min temp
-                # The softub controller will handle the schedule normally
-                report_temp = current_temp
-            else:
-                adjust = (
-                    1.0
-                    if (config["target_temp"] == config["override_on_temp"])
-                    else -1.0
-                )
-                adjust *= config["hysteresis"]
-                under_temp = current_temp < config["target_temp"] + adjust
-                if under_temp:
-                    report_temp = config["override_on_temp"]
-                else:
-                    report_temp = config["override_off_temp"]
+            # Adjusts the reported temp to account for > 104 temps,
+            # and fraction of degree settings.
+            report_temp = current_temp - (tt - int(min(104, tt)))
             set_temperature(report_temp)
-            if report_temp <= config["override_on_temp"]:
-                led.fill((20, 0, 0))
-            else:
-                led.fill((0, 0, 20))
+            #led.value(current_temp <= tt)
         softub.poll()
         if pool:
             server.poll()
-            mqtt_poll(current_temp, config["target_temp"])
+            mqtt_poll(current_temp, tt)
 except Exception as e:
     traceback.print_exception(e)
     time.sleep(30)

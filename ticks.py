@@ -19,7 +19,7 @@ def ticks_diff(ticks1, ticks2):
 def is_due(due):
     return due and ticks_diff(due, supervisor.ticks_ms()) <= 0
 
-def calc_due_ticks(seconds):
+def calc_due_ticks_sec(seconds):
     return calc_due_ticks_ms(int(seconds * 1000))
 
 def calc_due_ticks_ms(ms):
