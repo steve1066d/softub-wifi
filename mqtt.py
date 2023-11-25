@@ -8,43 +8,36 @@ MQTT_POLL_SEC = 60
 
 mqtt_username = os.getenv("MQTT_USERNAME")
 mqtt_key = os.getenv("MQTT_PASSWORD")
+device = os.getenv("MQTT_DEVICE")
+mqtt_broker = os.getenv("MQTT_BROKER")
 
-# Setup a feed named 'photocell' for publishing to a feed
-temperature_feed = "homeassistant/sensor/hottub/temperature"
-set_temp_feed = "homeassistant/climate/hottub/set"
-temperature_setting_feed = "homeassistant/sensor/hottub/setting"
-button_feed = "hottub/switch1/command"
+temperature_feed = f"homeassistant/sensor/{device}/temperature"
+set_temp_feed = f"homeassistant/climate/{device}/set"
+temperature_setting_feed = f"homeassistant/sensor/{device}/setting"
+button_feed = f"hottub/switch1/command"
 
 mqtt_due = 0
 mqtt_temp = 0
 mqtt_set_temp = 0
 mqtt_error = False
-# Define callback methods which are called when events occur
-# pylint: disable=unused-argument, redefined-outer-name
+
 def connected(client, userdata, flags, rc):
-    # This function will be called when the client is connected
-    # successfully to the broker.
     print("Connected to mqtt")
 
 def disconnected(client, userdata, rc):
-    # This method is called when the client is disconnected
-    print("Disconnected from Adafruit IO!")
+    print("Disconnected from mqtt")
 
 def message(client, topic, message):
     global mqtt_due
-    # This method is called when a topic the client is subscribed to
-
-    # has a new message.
     if topic == set_temp_feed:
         fn_set_temp(float(message))
         mqtt_due = calc_due_ticks_sec(.2)
-
     print(f"New message on topic {topic}: {message}")
 
 def mqtt_connect(pool, _set_temp):
     global mqtt_client, mqtt_due, fn_set_temp
     mqtt_client = MQTT.MQTT(
-        broker="192.168.1.193",
+        broker=mqtt_broker,
         port=1883,
         username=mqtt_username,
         password=mqtt_key,
@@ -67,9 +60,10 @@ def mqtt_connect(pool, _set_temp):
                 mqtt_client.loop(.5)
                 mqtt_client.subscribe(temperature_feed)
                 mqtt_client.loop(.5)
-                mqtt_client.subscribe("homeassistant/state/hottub/state_heat")
+                mqtt_client.subscribe(f"homeassistant/state/{device}/state_heat")
                 mqtt_client.loop(.5)
-                mqtt_client.publish("homeassistant/state/hottub/state_heat", "heat", True)
+                # This is set by
+                # mqtt_client.publish(f"homeassistant/state/{device}/state_heat", "heat", True)
                 mqtt_client.loop(.5)
                 break
             except MQTT.MMQTTException as e:
@@ -82,6 +76,7 @@ def mqtt_connect(pool, _set_temp):
 
 def mqtt_button_light():
     mqtt_client.publish(button_feed, "press")
+    print("published light button")
 
 def mqtt_poll(_temp, _set_temp):
     global mqtt_temp, mqtt_set_temp, mqtt_due, mqtt_error

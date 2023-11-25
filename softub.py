@@ -18,6 +18,7 @@ class Softub:
     board_p = False
     # How often the status should be updated
     polling_ms = 333
+    button_ms = 200
     debug_buttons = None
     debug_board = str(board_led_temp)
     display_callback = None
@@ -148,8 +149,10 @@ class Softub:
 
     # Methods to board
     def click_button(self, button):
+        if not button:
+            raise Exception("No button")
         self.button_state = button
-        self.button_timeout = calc_due_ticks_ms(self.polling_ms)
+        self.button_timeout = calc_due_ticks_ms(self.button_ms)
 
     def display_temperature(self, tempF):
         temp = int(round(tempF))
@@ -203,7 +206,7 @@ class Softub:
                 self.button_timeout = 0
             else:
                 self.button_state = 0
-                self.button_timeout = calc_due_ticks_ms(self.polling_ms)
+                self.button_timeout = calc_due_ticks_ms(self.button_ms)
 
     # The callback to update. The default is to echo
     def callback(self):

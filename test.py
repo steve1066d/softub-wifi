@@ -1,12 +1,22 @@
 import time
 """Tests the Softub controller"""
+"""
+This uses an Adafruit ESP32-S2 Feather, with an
+Addafruit FeatherWing OLED - 128x64 OLED display_bus
+
+Wiring:
+MOSI  9  IO8
+MISO 10  IO9
+RX    8  IO44
+TX    7  IO43
+"""
 
 import board
 import microcontroller
 import supervisor
 from analogio import AnalogOut
 from softub import Softub
-from ticks import calc_due_ticks, is_due, ticks_diff, ticks_add
+from ticks import is_due, ticks_diff, ticks_add
 import displayio
 import terminalio
 from adafruit_display_text import label
@@ -28,6 +38,7 @@ display_group.append(label)
 set_temp = 100
 current_temp = 100
 analog_out = AnalogOut(board.A1)
+last_button = None
 
 def set_temperature():
     adj_out = map_unconstrained_range(95, 95, 102, 102, current_temp)
@@ -35,14 +46,16 @@ def set_temperature():
     analog_out.value = x
 
 def callback():
-    global buttons, set_temp
-    if softub.top_buttons & softub.button_up:
-        print("up")
-        set_temp += 1
-    if softub.top_buttons & softub.button_down:
-        set_temp -= 1
-        print("down")
-    softub.display_temperature(set_temp)
+    global buttons, set_temp, last_button
+    if last_button != softub.top_buttons:
+        if softub.top_buttons & softub.button_up:
+            print("up")
+            set_temp += 1
+        if softub.top_buttons & softub.button_down:
+            set_temp -= 1
+            print("down")
+        softub.display_temperature(set_temp)
+        last_button = softub.top_buttons
     softub.display_heat(current_temp < set_temp)
     if buttons:
         print(buttons)
@@ -60,8 +73,7 @@ def callback():
         text += " F"
     label.text = text
 
-
-softub = Softub(board.MOSI, board.MISO, board.TX, board.RX, callback)
+softub = Softub(board.TX, board.RX, board.MISO, board.MOSI, callback)
 up = DigitalInOut(board.D9)
 up.pull = Pull.UP
 jets = DigitalInOut(board.D6)

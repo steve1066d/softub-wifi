@@ -18,13 +18,12 @@ from analogio import AnalogOut
 from adafruit_httpserver import Server, Request, Response, POST
 from softub import Softub
 from ticks import calc_due_ticks_sec, is_due, ticks_diff, ticks_add
-#import neopixel
 import adafruit_ads1x15.ads1115 as ADS
-from analogio import AnalogIn
 from adafruit_ads1x15.analog_in import AnalogIn as AnalogInI2C
+from analogio import AnalogIn
 from adafruit_simplemath import map_unconstrained_range
-import traceback
 import adafruit_ad569x
+import traceback
 import storage
 
 
@@ -129,7 +128,6 @@ validate_analog = None
 try:
     i2c = busio.I2C(board.IO6, board.IO5)  # uses board.SCL and board.SDA
     print ("scan")
-    #print (i2c.scan())
     ads = ADS.ADS1115(i2c)
     analog_in = AnalogInI2C(ads, ADS.P0)  # 0x48
     print("i2c A2D found")
@@ -154,6 +152,7 @@ def callback():
     global top_buttons_ms, set_point_timeout, repeating
     adjust = None
     if softub.top_buttons:
+        print('button', softub.top_buttons)
         if (
             softub.top_buttons_ms != top_buttons_ms
             or repeating
@@ -167,7 +166,11 @@ def callback():
                 print("inc")
             elif softub.top_buttons == softub.button_light:
                 mqtt_button_light()
-                pass
+            else:
+                # some other button was pressed.  Just send it to the controller.
+                print("buttons:", softub.top_buttons)
+                softub.button_state = softub.top_buttons
+                softub.button_timeout = softub.due
             # set the timer if a button is held down
             if repeating:
                 repeating = ticks_add(supervisor.ticks_ms(), 300)
@@ -178,15 +181,6 @@ def callback():
     top_buttons_ms = softub.top_buttons_ms
     if adjust:
         set_target(config["target_temp"] + adjust)
-    elif (
-        softub.top_buttons != softub.button_down
-        or softub.top_buttons != softub.button_up
-    ):
-        # some other button was pressed.  Just send it to the controller.
-        softub.button_state = softub.top_buttons
-        if softub.button_state:
-            print("pressed:", softub.top_buttons)
-        softub.button_timeout = softub.due
     tt = config["target_temp"]
     if not softub.button_timeout:
         # There is not currently a button press in process
@@ -195,9 +189,10 @@ def callback():
             change = softub.button_up
         elif softub.board_led_temp > math.floor(tt):
             change = softub.button_down
-        if softub.board_led_temp < 104 or tt < 104:
+        if change and (softub.board_led_temp < 104 or tt < 104):
             # since 104 is the max temp, don't make the change if it is at the max.
             softub.click_button(change)
+            top_buttons_ms = softub.top_buttons_ms
     # Display the current temp or the set point if there has been a recent change
     if set_point_timeout and not is_due(set_point_timeout):
         softub.display_temperature(math.floor(tt))
@@ -321,6 +316,19 @@ def firmware(request: Request):
     os.rename("/code.py", "/code.bak")
     os.sync()
     microcontroller.reset()
+
+@server.route("/debug")
+def base(request: Request):
+    value = {
+        "current": current_temp,
+        "target": config["target_temp"],
+        "cpu": to_F(microcontroller.cpu.temperature),
+        "board": softub.board_led_temp,
+        "heat": softub.is_heat(),
+        "filter": softub.is_filter(),
+        "output": report_temp
+    }
+    return Response(request, json.dumps(value), content_type="text/json")
 
 @server.route("/")
 def base(request: Request):
