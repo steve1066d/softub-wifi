@@ -1,0 +1,18 @@
+# This is where you store the credentials necessary for your code.
+# Along with any required configuation itemps
+
+# Your WiFi SSId and password
+CIRCUITPY_WIFI_SSID = 
+CIRCUITPY_WIFI_PASSWORD = 
+
+# The circuitpython web api information
+CIRCUITPY_WEB_API_PORT=8080
+CIRCUITPY_WEB_API_PASSWORD=
+# make sure this is unique on the network.
+CIRCUITPY_WEB_INSTANCE_NAME = "hottub"
+
+# If defined, this will integrate to a MQTT server. It doesn't currently support SSL
+# MQTT_BROKER = 
+# MQTT_USERNAME = 
+# MQTT_PASSWORD = 
+# MQTT_DEVICE = "hottub"

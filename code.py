@@ -6,6 +6,7 @@ import board
 import busio
 import json
 import math
+import mdns
 import microcontroller
 import os
 import rtc
@@ -25,17 +26,9 @@ from adafruit_simplemath import map_unconstrained_range
 import adafruit_ad569x
 import traceback
 import storage
-
+from log import log
 
 disable_httpd = False
-try:
-    with open("/firmware.txt", "r") as f:
-        disable_httpd = True
-except Exception as e:
-    print(e)
-disable_httpd = False
-
-print("disable httpd", disable_httpd)
 
 config = None
 try:
@@ -44,9 +37,9 @@ try:
     with open("config.json", "r") as f:
         config = json.load(f)
 except Exception as e:
-    print(e)
+    log(e)
     writable = False
-    print("Could not write to nvram.  Using defaults")
+    log("Could not write to nvram.  Using defaults")
 if not config:
     config = {
         # The target temp.
@@ -80,34 +73,33 @@ pool = None
 wifi.radio.connect(
     os.getenv("CIRCUITPY_WIFI_SSID"), os.getenv("CIRCUITPY_WIFI_PASSWORD")
 )
-print(f"Connected to {os.getenv('CIRCUITPY_WIFI_SSID')}")
-print(f"My IP address: {wifi.radio.ipv4_address}")
+log(f"Connected to {os.getenv('CIRCUITPY_WIFI_SSID')}")
+log(f"My IP address: {wifi.radio.ipv4_address}")
 hostname = os.getenv("CIRCUITPY_WEB_INSTANCE_NAME")
 
 if disable_httpd:
-    print("Disabling httpd and mqtt")
+    log("Disabling httpd and mqtt")
 else:
     for i in range(3):
         try:
-            # mdns_server = mdns.Server(wifi.radio)
-            # mdns_server.hostname = hostname
-            # mdns_server
-            #  .advertise_service(service_type="_http", protocol="_tcp", port=80)
-            # print(f"mdns name: {hostname}.local")
+            mdns_server = mdns.Server(wifi.radio)
+            mdns_server.hostname = hostname
+            mdns_server.advertise_service(service_type="_http", protocol="_tcp", port=80)
+            log(f"mdns name: {hostname}.local")
             pool = socketpool.SocketPool(wifi.radio)
             try:
-                ntp = adafruit_ntp.NTP(pool, tz_offset=-5)
+                ntp = adafruit_ntp.NTP(pool, tz_offset=-6)
                 rtc.RTC().datetime = ntp.datetime
             except Exception as e:
-                traceback.print_exception(e)
+                log(traceback.format_exception(e))
             server = Server(pool, "/static", debug=True)
 
-            print("date", time.localtime())
+            log("date", time.localtime())
             server.start(str(wifi.radio.ipv4_address))
-            print("Listening on http://%s:80" % wifi.radio.ipv4_address)
+            log("Listening on http://%s:80" % wifi.radio.ipv4_address)
             break
         except Exception as e:
-            traceback.print_exception(e)
+            log(traceback.format_exception(e))
             time.sleep(10)
 
 top_buttons_ms = 0
@@ -130,19 +122,19 @@ try:
     print ("scan")
     ads = ADS.ADS1115(i2c)
     analog_in = AnalogInI2C(ads, ADS.P0)  # 0x48
-    print("i2c A2D found")
+    log("i2c A2D found")
     validate_analog = AnalogInI2C(ads, ADS.P1)
 except Exception as e:
-    traceback.print_exception(e)
-    print("Could not find i2c adc, using internal")
+    log(traceback.format_exception(e))
+    log("Could not find i2c adc, using internal")
 try:
     analog_out = adafruit_ad569x.Adafruit_AD569x(i2c)  # 0x4C
-    print("i2c DAC found")
+    log("i2c DAC found")
     max_analog_out = 2.5
     # this dac is already accurate
     validate_analog = None
 except Exception:
-    print("Could not find i2c dac, using internal")
+    log("Could not find i2c dac, using internal")
     # analog_out = AnalogOut(A1)
     analog_out = None
     max_analog_out = 3.3
@@ -152,7 +144,7 @@ def callback():
     global top_buttons_ms, set_point_timeout, repeating
     adjust = None
     if softub.top_buttons:
-        print('button', softub.top_buttons)
+        log('button', softub.top_buttons)
         if (
             softub.top_buttons_ms != top_buttons_ms
             or repeating
@@ -160,15 +152,15 @@ def callback():
         ):
             if softub.top_buttons == softub.button_down:
                 adjust = -config["increment"]
-                print("dec")
+                log("dec")
             elif softub.top_buttons == softub.button_up:
                 adjust = config["increment"]
-                print("inc")
+                log("inc")
             elif softub.top_buttons == softub.button_light:
                 mqtt_button_light()
             else:
                 # some other button was pressed.  Just send it to the controller.
-                print("buttons:", softub.top_buttons)
+                log("buttons:", softub.top_buttons)
                 softub.button_state = softub.top_buttons
                 softub.button_timeout = softub.due
             # set the timer if a button is held down
@@ -187,23 +179,23 @@ def callback():
         change = None
         if float(softub.board_led_temp) < math.floor(tt):
             change = softub.button_up
+            log("change", "up")
         elif softub.board_led_temp > math.floor(tt):
             change = softub.button_down
+            log("change", "down")
         if change and (softub.board_led_temp < 104 or tt < 104):
             # since 104 is the max temp, don't make the change if it is at the max.
             softub.click_button(change)
             top_buttons_ms = softub.top_buttons_ms
+            log("clicked")
     # Display the current temp or the set point if there has been a recent change
     if set_point_timeout and not is_due(set_point_timeout):
-        softub.display_temperature(math.floor(tt))
-        # if the temp is set to a fraction of a degree, indicate that by
-        # turning on the filter LED
-        softub.display_filter(tt > math.floor(tt))
+        softub.display_temperature(tt)
     else:
         set_point_timeout = 0
-        softub.display_temperature(math.floor(current_temp))
-        softub.display_filter(current_temp > math.floor(current_temp))
+        softub.display_temperature(current_temp)
     softub.display_heat(softub.is_heat())
+    softub.display_filter(softub.is_filter());
 
 def to_F(c_deg: float):
     return c_deg * (9 / 5) + 32
@@ -219,7 +211,7 @@ def set_target(deg: float):
         raise Exception()
     if config["target_temp"] == deg:
         return
-    print(f"Changing setting to {deg}")
+    log(f"Changing setting to {deg}")
     deg = max(deg, config["minimum_temp"])
     deg = min(deg, config["maximum_temp"])
     config["target_temp"] = deg
@@ -246,7 +238,7 @@ def set_current_temp(temp: float):
 
 def save_config():
     global clock
-    print("Saving config")
+    log("Saving config")
     try:
         with open("config.json", "w") as f:
             f.write(json.dumps(config))
@@ -258,10 +250,9 @@ def save_config():
 
 def set_temperature(temp: float):
     if analog_out:
-        print(temp)
+        log(temp)
         adj_out = map_unconstrained_range(temp, 98, 104, map_98, map_104)
-        print("out", adj_out)
-        #temp = 50
+        log("out", adj_out)
         x = int(adj_out / max_analog_out * 655.35)
         analog_out.value = x
 
@@ -317,6 +308,10 @@ def firmware(request: Request):
     os.sync()
     microcontroller.reset()
 
+@server.route("/reboot")
+def reboot(request: Request):
+    microcontroller.reset()
+
 @server.route("/debug")
 def base(request: Request):
     value = {
@@ -354,9 +349,9 @@ def buttonpress(request: Request):
         return Response(request, webpage(), content_type="text/html")
     else:
         value = request.json()
-        print(json.dumps(value))
+        log(json.dumps(value))
     clock = 0
-    print("set", config["target_temp"])
+    log("set", config["target_temp"])
 
 
 # Use the a2d converter to determine the actual values to use
@@ -376,8 +371,8 @@ def _calibrate(value):
         error = value - new_value
         old_delta = delta
         delta += error
-        # print("d,e", old_error, error)
-    print()
+        # log("d,e", old_error, error)
+    # log()
     return value + old_delta
 
 
@@ -389,11 +384,11 @@ try:
     if validate_analog:
         map_98 = _calibrate(98.0)
         map_104 = _calibrate(104.0)
-        print(f"Calibrated adjustments 98={map_98}, 104={map_104}")
+        log(f"Calibrated adjustments 98={map_98}, 104={map_104}")
     else:
         map_98 = 98
         map_104 = 104
-        print("Not using i2c adc with internal dac, no calibration")
+        log("Not using i2c adc with internal dac, no calibration")
 
     if config["unit"] == "C":
         config["target_temp"] = to_F(config["target_temp"])
@@ -418,7 +413,7 @@ try:
             server.poll()
             mqtt_poll(current_temp, tt)
 except Exception as e:
-    traceback.print_exception(e)
+    log(traceback.format_exception(e))
     time.sleep(30)
-    print("restarting..")
+    log("restarting..")
     supervisor.reload()

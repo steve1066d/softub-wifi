@@ -64,7 +64,7 @@ def callback():
     #print(softub.top_led_temp)
     #print()
     buttons = 0
-    text = str(softub.board_led_temp) + '\n'
+    text = softub.get_display() + '\n'
     if softub.is_filter():
         text += ".5"
     if softub.is_heat():
@@ -73,7 +73,7 @@ def callback():
         text += " F"
     label.text = text
 
-softub = Softub(board.TX, board.RX, board.MISO, board.MOSI, callback)
+softub = Softub(board.TX, board.RX, board.MISO, board.MOSI, callback, None, False)
 up = DigitalInOut(board.D9)
 up.pull = Pull.UP
 jets = DigitalInOut(board.D6)

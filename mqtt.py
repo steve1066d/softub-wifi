@@ -4,6 +4,9 @@ import adafruit_logging as logging
 import time
 import traceback
 import adafruit_minimqtt.adafruit_minimqtt as MQTT
+from log import log
+import gc
+
 MQTT_POLL_SEC = 60
 
 mqtt_username = os.getenv("MQTT_USERNAME")
@@ -22,17 +25,17 @@ mqtt_set_temp = 0
 mqtt_error = False
 
 def connected(client, userdata, flags, rc):
-    print("Connected to mqtt")
+    log("Connected to mqtt")
 
 def disconnected(client, userdata, rc):
-    print("Disconnected from mqtt")
+    log("Disconnected from mqtt")
 
 def message(client, topic, message):
     global mqtt_due
     if topic == set_temp_feed:
         fn_set_temp(float(message))
         mqtt_due = calc_due_ticks_sec(.2)
-    print(f"New message on topic {topic}: {message}")
+    log(f"New message on topic {topic}: {message}")
 
 def mqtt_connect(pool, _set_temp):
     global mqtt_client, mqtt_due, fn_set_temp
@@ -62,21 +65,21 @@ def mqtt_connect(pool, _set_temp):
                 mqtt_client.loop(.5)
                 mqtt_client.subscribe(f"homeassistant/state/{device}/state_heat")
                 mqtt_client.loop(.5)
-                # This is set by
+                # This is set by homeassistant
                 # mqtt_client.publish(f"homeassistant/state/{device}/state_heat", "heat", True)
                 mqtt_client.loop(.5)
                 break
             except MQTT.MMQTTException as e:
-                traceback.print_exception(e)
+                log(traceback.format_exception(e))
                 time.sleep(.3)
     except MQTT.MMQTTException as e:
-        traceback.print_exception(e)
+        log(traceback.format_exception(e))
         time.sleep(3)
         mqtt_client = None
 
 def mqtt_button_light():
     mqtt_client.publish(button_feed, "press")
-    print("published light button")
+    log("published light button")
 
 def mqtt_poll(_temp, _set_temp):
     global mqtt_temp, mqtt_set_temp, mqtt_due, mqtt_error
@@ -86,9 +89,11 @@ def mqtt_poll(_temp, _set_temp):
         if mqtt_client.is_connected():
             # Poll the message queue
             mqtt_client.loop()
+        if is_due(mqtt_due):
+            log("mem:", gc.mem_free())
         # Process every minute or if there's a change in the set point
         if is_due(mqtt_due) or not mqtt_error and _set_temp != mqtt_set_temp:
-            print(_set_temp, _temp)
+            log(_set_temp, _temp)
             if not mqtt_client.is_connected():
                 mqtt_client.reconnect()
             if mqtt_client.is_connected():
@@ -102,7 +107,7 @@ def mqtt_poll(_temp, _set_temp):
                         mqtt_set_temp = _set_temp
                         mqtt_client.publish(temperature_setting_feed, mqtt_set_temp, True)
                         mqtt_set_updated = False
-                        print("pub set", mqtt_set_temp)
+                        log("pub set", mqtt_set_temp)
                 except:
                     pass
             mqtt_due = ticks_add(mqtt_due, 60000)
@@ -110,8 +115,8 @@ def mqtt_poll(_temp, _set_temp):
     except MQTT.MMQTTException as e:
         mqtt_error = True
         mqtt_due = calc_due_ticks_sec(300)
-        traceback.print_exception(e)
+        log(traceback.format_exception(e))
     except BrokenPipeError as e:
         mqtt_error = True
         mqtt_due = calc_due_ticks_sec(300)
-        traceback.print_exception(e)
+        log(traceback.format_exception(e))

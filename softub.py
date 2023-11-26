@@ -1,6 +1,7 @@
 import busio
 import supervisor
 from ticks import calc_due_ticks_ms, calc_due_ticks_sec, is_due
+from log import log
 
 
 class Softub:
@@ -22,6 +23,8 @@ class Softub:
     debug_buttons = None
     debug_board = str(board_led_temp)
     display_callback = None
+    # If true, it will display temps in .1 increments, without the hundreds value
+    display_tenths = True
 
     # A copy of the LED's on the top unit
     display_buffer = bytearray([0x02, 0x00, 0x01, 0x00, 0x00, 0x01, 0xFF])
@@ -45,7 +48,7 @@ class Softub:
     button_down = 0x08
     last_tick = 0
 
-    def __init__(self, board_tx, board_rx, top_tx, top_rx, display_callback=None, led=None):
+    def __init__(self, board_tx, board_rx, top_tx, top_rx, display_callback=None, led=None, display_tenths=True):
         self.uart_board = busio.UART(
             board_tx, board_rx, baudrate=2400, receiver_buffer_size=13
         )
@@ -55,6 +58,7 @@ class Softub:
         self.due = calc_due_ticks_sec(0)
         self.display_callback = display_callback
         self.led = led
+        self.display_tenths = display_tenths
 
     ###
     #  Methods to read state from Softub
@@ -78,10 +82,10 @@ class Softub:
                     self.top_buttons = new_buttons
                     self.top_buttons_ms = supervisor.ticks_ms()
             else:
-                print("Received invalid button: "+str(raw))
+                log("Received invalid button: "+str(raw))
                 return
             if new_buttons:
-                print("button", new_buttons)
+                log("button", new_buttons)
             if self.top_buttons and (self.button_up | self.button_down):
                 # If up or down arrows were pressed, show set temp
                 self.end_show_setting_seconds = calc_due_ticks_sec(
@@ -110,7 +114,7 @@ class Softub:
                 sum += raw[i]
                 self.display_p |= raw[i] == 11
             if (sum & 0xFF) != raw[5]:
-                print(
+                log(
                     "invalid checksum "
                     + str(sum & 0xFF)
                     + " "
@@ -120,7 +124,7 @@ class Softub:
                 )
                 return
             if True:  # not self.display_p and self.end_show_setting_seconds:
-                # print(" ".join("%02x" % b for b in raw))
+                # log(" ".join("%02x" % b for b in raw))
                 self.board_led_temp = (
                     (raw[2] % 10) * 100 + (raw[3] % 10) * 10 + (raw[4] % 10)
                 )
@@ -132,7 +136,13 @@ class Softub:
                 + " "
                 + str(self.top_buttons)
             )
-            # print(self.debug_board)
+            # log(self.debug_board)
+
+    def get_digit(self, c):
+        return ' ' if self.board_buffer[c] == 10 else chr(ord('0') + self.board_buffer[c])
+
+    def get_display(self):
+        return self.get_digit(2) + self.get_digit(3) + self.get_digit(4)
 
     def is_heat(self):
         return self.board_buffer[1] & 0x20
@@ -155,9 +165,19 @@ class Softub:
         self.button_timeout = calc_due_ticks_ms(self.button_ms)
 
     def display_temperature(self, tempF):
-        temp = int(round(tempF))
-        h = 0x0A if temp < 100 else temp // 100
-        self.display_set_digits(h, int((tempF // 10) % 10), int(tempF % 10))
+        if self.display_tenths:
+            temp = int(round(tempF * 10))
+            if temp >= 1000:
+                if temp % 10:
+                    temp = temp % 1000
+                else:
+                    temp = temp // 10
+            h = temp // 100
+        else:
+            temp = int(round(tempF))
+            # 0A is blank
+            h = 0x0A if temp < 100 else temp // 100
+        self.display_set_digits(h, int((temp // 10) % 10), int(temp % 10))
 
     # Values in digit places:
     # 0 - 9 - digit
@@ -192,7 +212,7 @@ class Softub:
             sum += self.display_buffer[i]
         self.display_buffer[5] = sum & 0xFF
         self.uart_top.write(self.display_buffer)
-        #print(" ".join("%02x" % b for b in self.display_buffer))
+        #log(" ".join("%02x" % b for b in self.display_buffer))
 
     def debug(self):
         return self.debug_board
@@ -200,7 +220,7 @@ class Softub:
     def fn_board_update(self):
         encoded = (self.button_state << 4) | (self.button_state ^ 0x0F)
         self.uart_board.write(bytes([encoded]))
-        #print(encoded)
+        #log(encoded)
         if is_due(self.button_timeout):
             if self.button_state == 0:
                 self.button_timeout = 0
