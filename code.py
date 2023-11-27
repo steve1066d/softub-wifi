@@ -107,9 +107,6 @@ repeating = None
 temp_reads = []
 set_point_timeout = 0
 
-#led = neopixel.NeoPixel(board.NEOPIXEL, 1)
-#led = digitalio.DigitalInOut(board.LED)
-
 # analog_out = AnalogOut(board.A1)
 
 current_temp = 0
@@ -250,9 +247,7 @@ def save_config():
 
 def set_temperature(temp: float):
     if analog_out:
-        log(temp)
         adj_out = map_unconstrained_range(temp, 98, 104, map_98, map_104)
-        log("out", adj_out)
         x = int(adj_out / max_analog_out * 655.35)
         analog_out.value = x
 

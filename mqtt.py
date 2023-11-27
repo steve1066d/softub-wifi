@@ -61,8 +61,6 @@ def mqtt_connect(pool, _set_temp):
                 mqtt_due = calc_due_ticks_sec(2)
                 mqtt_client.subscribe(set_temp_feed)
                 mqtt_client.loop(.5)
-                mqtt_client.subscribe(temperature_feed)
-                mqtt_client.loop(.5)
                 mqtt_client.subscribe(f"homeassistant/state/{device}/state_heat")
                 mqtt_client.loop(.5)
                 # This is set by homeassistant
@@ -89,11 +87,8 @@ def mqtt_poll(_temp, _set_temp):
         if mqtt_client.is_connected():
             # Poll the message queue
             mqtt_client.loop()
-        if is_due(mqtt_due):
-            log("mem:", gc.mem_free())
         # Process every minute or if there's a change in the set point
-        if is_due(mqtt_due) or not mqtt_error and _set_temp != mqtt_set_temp:
-            log(_set_temp, _temp)
+        if is_due(mqtt_due) or (not mqtt_error and _set_temp != mqtt_set_temp):
             if not mqtt_client.is_connected():
                 mqtt_client.reconnect()
             if mqtt_client.is_connected():
@@ -103,6 +98,7 @@ def mqtt_poll(_temp, _set_temp):
                     if _temp != mqtt_temp:
                         mqtt_temp = _temp
                         mqtt_client.publish(temperature_feed, mqtt_temp, True)
+                        log("mqtt", mqtt_temp)
                     if _set_temp != mqtt_set_temp:
                         mqtt_set_temp = _set_temp
                         mqtt_client.publish(temperature_setting_feed, mqtt_set_temp, True)

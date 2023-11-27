@@ -48,7 +48,7 @@ class Softub:
     button_down = 0x08
     last_tick = 0
 
-    def __init__(self, board_tx, board_rx, top_tx, top_rx, display_callback=None, led=None, display_tenths=True):
+    def __init__(self, board_tx, board_rx, top_tx, top_rx, display_callback=None, display_tenths=True):
         self.uart_board = busio.UART(
             board_tx, board_rx, baudrate=2400, receiver_buffer_size=13
         )
@@ -57,7 +57,6 @@ class Softub:
         )
         self.due = calc_due_ticks_sec(0)
         self.display_callback = display_callback
-        self.led = led
         self.display_tenths = display_tenths
 
     ###
@@ -69,8 +68,6 @@ class Softub:
         if is_due(self.end_show_setting_seconds):
             self.end_show_setting_seconds = 0
         while self.uart_top.in_waiting:
-            if self.led:
-                self.led.value = False
             while self.uart_top.in_waiting:
                 raw = self.uart_top.read(1)[0]
             # The 4 button bits are replicated and inverted between the
@@ -95,8 +92,6 @@ class Softub:
     # Updates from the board to the LED
     def read_board(self):
         while self.uart_board.in_waiting > 6:
-            if self.led:
-                self.led.value = True
             # If we are behind, catch up
             while self.uart_board.in_waiting > 6:
                 raw = self.uart_board.read(7)
@@ -139,7 +134,7 @@ class Softub:
             # log(self.debug_board)
 
     def get_digit(self, c):
-        return ' ' if self.board_buffer[c] == 10 else chr(ord('0') + self.board_buffer[c])
+        return '0123456789 P'[self.board_buffer[c]]
 
     def get_display(self):
         return self.get_digit(2) + self.get_digit(3) + self.get_digit(4)
