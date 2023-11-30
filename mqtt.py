@@ -12,13 +12,15 @@ mqtt_key = os.getenv("MQTT_PASSWORD")
 device = os.getenv("MQTT_DEVICE")
 mqtt_broker = os.getenv("MQTT_BROKER")
 
-temperature_command_topic = f"homeassistant/climate/{device}/set"
-temperature_state_topic = f"homeassistant/sensor/{device}/setting"
+temperature_command_topic = f"{device}/command/temperature"
+temperature_state_topic = f"{device}/state/temperature"
 
-mode_command_topic = f"homeassistant/command/{device}/state_heat"
-mode_state_topic = f"homeassistant/state/{device}/state_heat"
+mode_command_topic = f"{device}/command/mode"
+mode_state_topic = f"{device}/state/mode"
 
-current_temperature_topic = f"homeassistant/sensor/{device}/temperature"
+current_temperature_topic = f"{device}/state/current"
+
+# This exposes the Softub Light button to mqtt
 button_feed = "hottub/switch1/command"
 
 states = {}
@@ -56,6 +58,7 @@ def message(client, topic, message):
         heat_state = message == "heat"
         mqtt_due = calc_due_ticks_sec(0.2)
 
+
 def mqtt_connect(pool, _set_temp):
     global mqtt_client, mqtt_due, fn_set_temp
     mqtt_client = MQTT.MQTT(
@@ -68,6 +71,7 @@ def mqtt_connect(pool, _set_temp):
         connect_retries=1,
     )
 
+    # mqtt_client.enable_logger(logging, logging.DEBUG)
     mqtt_client.on_connect = connected
     mqtt_client.on_disconnect = disconnected
     mqtt_client.on_message = message
@@ -90,11 +94,11 @@ def mqtt_connect(pool, _set_temp):
         time.sleep(3)
         mqtt_client = None
 
+
 def mqtt_button_light():
     mqtt_client.publish(button_feed, "press")
     log("published light button")
 
-def mqtt_poll(_temp, _set_temp):
 def mqtt_poll(_temp, _set_temp, _running):
     global mqtt_due, mqtt_error
     if not mqtt_client:

@@ -1,0 +1,20 @@
+# This is an example entry to add to your Home Assistant configuration.yaml:
+
+mqtt:
+  climate:
+    - unique_id: "softub"
+      name: softub
+      modes:
+        - "off"
+        - "heat"
+      temperature_command_topic: "softub/command/temperature"
+      temperature_state_topic: "softub/state/temperature"
+      mode_command_topic: "softub/command/mode"
+      mode_state_topic: "softub/state/mode"
+      current_temperature_topic: "softub/state/current"
+      precision: 0.1
+      min_temp: 50
+      max_temp: 106
+      device:
+        identifiers: "softub"
+        name: "softub"
