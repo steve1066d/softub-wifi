@@ -1,11 +1,9 @@
 import os
 from ticks import calc_due_ticks_sec, is_due, ticks_add
-import adafruit_logging as logging
 import time
 import traceback
 import adafruit_minimqtt.adafruit_minimqtt as MQTT
 from log import log
-import gc
 
 MQTT_POLL_SEC = 60
 
@@ -14,28 +12,49 @@ mqtt_key = os.getenv("MQTT_PASSWORD")
 device = os.getenv("MQTT_DEVICE")
 mqtt_broker = os.getenv("MQTT_BROKER")
 
-temperature_feed = f"homeassistant/sensor/{device}/temperature"
-set_temp_feed = f"homeassistant/climate/{device}/set"
-temperature_setting_feed = f"homeassistant/sensor/{device}/setting"
-button_feed = f"hottub/switch1/command"
+temperature_command_topic = f"homeassistant/climate/{device}/set"
+temperature_state_topic = f"homeassistant/sensor/{device}/setting"
+
+mode_command_topic = f"homeassistant/command/{device}/state_heat"
+mode_state_topic = f"homeassistant/state/{device}/state_heat"
+
+current_temperature_topic = f"homeassistant/sensor/{device}/temperature"
+button_feed = "hottub/switch1/command"
+
+states = {}
 
 mqtt_due = 0
-mqtt_temp = 0
-mqtt_set_temp = 0
 mqtt_error = False
+# We use the mode as an indication if the hot tub is on.  This can be turned on or off
+# by monitoring the power. If this or the board is in filter or heat mode, then this
+# will be on.
+heat_state = False
+
 
 def connected(client, userdata, flags, rc):
     log("Connected to mqtt")
 
+
 def disconnected(client, userdata, rc):
     log("Disconnected from mqtt")
 
+
+def publish_if_changed(topic, value, persistent=False):
+    current = states.get(topic)
+    if current != value:
+        mqtt_client.publish(topic, value, persistent)
+        states[topic] = value
+        log(f"{topic} set to {value}")
+
 def message(client, topic, message):
-    global mqtt_due
-    if topic == set_temp_feed:
-        fn_set_temp(float(message))
-        mqtt_due = calc_due_ticks_sec(.2)
+    global mqtt_due, heat_state
     log(f"New message on topic {topic}: {message}")
+    if topic == temperature_command_topic:
+        fn_set_temp(float(message))
+        mqtt_due = calc_due_ticks_sec(0.2)
+    elif topic == mode_command_topic:
+        heat_state = message == "heat"
+        mqtt_due = calc_due_ticks_sec(0.2)
 
 def mqtt_connect(pool, _set_temp):
     global mqtt_client, mqtt_due, fn_set_temp
@@ -49,7 +68,6 @@ def mqtt_connect(pool, _set_temp):
         connect_retries=1,
     )
 
-    #mqtt_client.enable_logger(logging, logging.DEBUG)
     mqtt_client.on_connect = connected
     mqtt_client.on_disconnect = disconnected
     mqtt_client.on_message = message
@@ -59,17 +77,14 @@ def mqtt_connect(pool, _set_temp):
             try:
                 mqtt_client.connect()
                 mqtt_due = calc_due_ticks_sec(2)
-                mqtt_client.subscribe(set_temp_feed)
-                mqtt_client.loop(.5)
-                mqtt_client.subscribe(f"homeassistant/state/{device}/state_heat")
-                mqtt_client.loop(.5)
-                # This is set by homeassistant
-                # mqtt_client.publish(f"homeassistant/state/{device}/state_heat", "heat", True)
-                mqtt_client.loop(.5)
+                mqtt_client.subscribe(temperature_command_topic)
+                mqtt_client.loop(0.5)
+                mqtt_client.subscribe(mode_command_topic)
+                mqtt_client.loop(0.5)
                 break
             except MQTT.MMQTTException as e:
                 log(traceback.format_exception(e))
-                time.sleep(.3)
+                time.sleep(0.3)
     except MQTT.MMQTTException as e:
         log(traceback.format_exception(e))
         time.sleep(3)
@@ -80,7 +95,8 @@ def mqtt_button_light():
     log("published light button")
 
 def mqtt_poll(_temp, _set_temp):
-    global mqtt_temp, mqtt_set_temp, mqtt_due, mqtt_error
+def mqtt_poll(_temp, _set_temp, _running):
+    global mqtt_due, mqtt_error
     if not mqtt_client:
         return
     try:
@@ -88,23 +104,23 @@ def mqtt_poll(_temp, _set_temp):
             # Poll the message queue
             mqtt_client.loop()
         # Process every minute or if there's a change in the set point
-        if is_due(mqtt_due) or (not mqtt_error and _set_temp != mqtt_set_temp):
+        if is_due(mqtt_due) or (
+            not mqtt_error and states.get(temperature_state_topic) != _set_temp
+        ):
             if not mqtt_client.is_connected():
                 mqtt_client.reconnect()
             if mqtt_client.is_connected():
                 try:
-                    _temp = round(_temp, 1)
-                    _set_temp = round(_set_temp, 1)
-                    if _temp != mqtt_temp:
-                        mqtt_temp = _temp
-                        mqtt_client.publish(temperature_feed, mqtt_temp, True)
-                        log("mqtt", mqtt_temp)
-                    if _set_temp != mqtt_set_temp:
-                        mqtt_set_temp = _set_temp
-                        mqtt_client.publish(temperature_setting_feed, mqtt_set_temp, True)
-                        mqtt_set_updated = False
-                        log("pub set", mqtt_set_temp)
-                except:
+                    publish_if_changed(current_temperature_topic, round(_temp, 1), True)
+                    publish_if_changed(
+                        temperature_state_topic, round(_set_temp, 1), True
+                    )
+                    # report heat if home assistant reports the heat is on, or if the
+                    # heat or filter indicators are on.
+                    publish_if_changed(
+                        mode_state_topic, "heat" if heat_state or _running else "off"
+                    )
+                except Exception:
                     pass
             mqtt_due = ticks_add(mqtt_due, 60000)
             mqtt_error = False

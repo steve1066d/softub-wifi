@@ -48,7 +48,15 @@ class Softub:
     button_down = 0x08
     last_tick = 0
 
-    def __init__(self, board_tx, board_rx, top_tx, top_rx, display_callback=None, display_tenths=True):
+    def __init__(
+        self,
+        board_tx,
+        board_rx,
+        top_tx,
+        top_rx,
+        display_callback=None,
+        display_tenths=True,
+    ):
         self.uart_board = busio.UART(
             board_tx, board_rx, baudrate=2400, receiver_buffer_size=13
         )
@@ -79,7 +87,7 @@ class Softub:
                     self.top_buttons = new_buttons
                     self.top_buttons_ms = supervisor.ticks_ms()
             else:
-                log("Received invalid button: "+str(raw))
+                log("Received invalid button: " + str(raw))
                 return
             if new_buttons:
                 log("button", new_buttons)
@@ -207,7 +215,7 @@ class Softub:
             sum += self.display_buffer[i]
         self.display_buffer[5] = sum & 0xFF
         self.uart_top.write(self.display_buffer)
-        #log(" ".join("%02x" % b for b in self.display_buffer))
+        # log(" ".join("%02x" % b for b in self.display_buffer))
 
     def debug(self):
         return self.debug_board
@@ -215,7 +223,7 @@ class Softub:
     def fn_board_update(self):
         encoded = (self.button_state << 4) | (self.button_state ^ 0x0F)
         self.uart_board.write(bytes([encoded]))
-        #log(encoded)
+        # log(encoded)
         if is_due(self.button_timeout):
             if self.button_state == 0:
                 self.button_timeout = 0
@@ -223,7 +231,8 @@ class Softub:
                 self.button_state = 0
                 self.button_timeout = calc_due_ticks_ms(self.button_ms)
 
-    # The callback to update. The default is to echo
+    # The callback for updating. The default is to transmit the data unchanged
+    # between the board and the display
     def callback(self):
         self.display_buffer = bytearray(self.board_buffer[:])
         self.button_state = self.top_buttons

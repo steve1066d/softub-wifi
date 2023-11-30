@@ -14,8 +14,6 @@ import socketpool
 import supervisor
 import time
 import wifi
-import digitalio
-from analogio import AnalogOut
 from adafruit_httpserver import Server, Request, Response, POST
 from softub import Softub
 from ticks import calc_due_ticks_sec, is_due, ticks_diff, ticks_add
@@ -84,7 +82,9 @@ else:
         try:
             mdns_server = mdns.Server(wifi.radio)
             mdns_server.hostname = hostname
-            mdns_server.advertise_service(service_type="_http", protocol="_tcp", port=80)
+            mdns_server.advertise_service(
+                service_type="_http", protocol="_tcp", port=80
+            )
             log(f"mdns name: {hostname}.local")
             pool = socketpool.SocketPool(wifi.radio)
             try:
@@ -109,20 +109,19 @@ set_point_timeout = 0
 
 # analog_out = AnalogOut(board.A1)
 
-current_temp = 0
+current_temp = None
 # report this temp to the board
 report_temp = 0
 
 validate_analog = None
 try:
     i2c = busio.I2C(board.IO6, board.IO5)  # uses board.SCL and board.SDA
-    print ("scan")
     ads = ADS.ADS1115(i2c)
     analog_in = AnalogInI2C(ads, ADS.P0)  # 0x48
     log("i2c A2D found")
     validate_analog = AnalogInI2C(ads, ADS.P1)
 except Exception as e:
-    log(traceback.format_exception(e))
+    log(e)
     log("Could not find i2c adc, using internal")
 try:
     analog_out = adafruit_ad569x.Adafruit_AD569x(i2c)  # 0x4C
@@ -190,9 +189,10 @@ def callback():
         softub.display_temperature(tt)
     else:
         set_point_timeout = 0
-        softub.display_temperature(current_temp)
+        if current_temp is not None:
+            softub.display_temperature(current_temp)
     softub.display_heat(softub.is_heat())
-    softub.display_filter(softub.is_filter());
+    softub.display_filter(softub.is_filter())
 
 def to_F(c_deg: float):
     return c_deg * (9 / 5) + 32
@@ -308,7 +308,7 @@ def reboot(request: Request):
     microcontroller.reset()
 
 @server.route("/debug")
-def base(request: Request):
+def debug(request: Request):
     value = {
         "current": current_temp,
         "target": config["target_temp"],
@@ -316,7 +316,7 @@ def base(request: Request):
         "board": softub.board_led_temp,
         "heat": softub.is_heat(),
         "filter": softub.is_filter(),
-        "output": report_temp
+        "output": report_temp,
     }
     return Response(request, json.dumps(value), content_type="text/json")
 
@@ -387,7 +387,6 @@ try:
 
     if config["unit"] == "C":
         config["target_temp"] = to_F(config["target_temp"])
-        config["hysteresis"] *= 9 / 5
         config["increment"] *= 9 / 5
     temp_due = calc_due_ticks_sec(config["poll_seconds"])
     uart_clock = 0
@@ -402,11 +401,11 @@ try:
             # and fraction of degree settings.
             report_temp = current_temp - (tt - int(min(104, tt)))
             set_temperature(report_temp)
-            #led.value(current_temp <= tt)
         softub.poll()
         if pool:
             server.poll()
-            mqtt_poll(current_temp, tt)
+            if current_temp:
+                mqtt_poll(current_temp, tt, softub.is_heat() or softub.is_filter())
 except Exception as e:
     log(traceback.format_exception(e))
     time.sleep(30)
