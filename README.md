@@ -23,7 +23,7 @@ https://github.com/monroewilliams/softub/blob/master/hardware/reverse-engineerin
 
 ### It does this by:
 * It uses a custom circuit board with a Seed XIAO ESP32S3 that plugs into the controller board where the display and temperature sensor currently plug into.
-* The display and display and temperature sensors plug into this circuit board.
+* The display and temperature sensors plug into the adapter circuit board.
 * It uses Adafruit 16 bit ADC and DAC boards to perform high accuracy temperature reads and reporiting.  (It is probably overkill, as the ESP32 has analog in and out, but the boards weren't very expensive).
 * It communicates with both the board and display, and works with both the softub buttons and Wifi.
 * It emulates pressing the hottub up and down buttons in response to change in the set temperature.
@@ -40,7 +40,8 @@ https://github.com/monroewilliams/softub/blob/master/hardware/reverse-engineerin
 * Create a version of the PCB and software that replaces the stock controller board. Ideally it would have the same tabs and connections so it would be a simple replacement, not requiring any soldering or new crimping.  My thoughts is to provide a safety cut-off in hardware to shut the tub off with a simple circuit, so the safety of the original design remains.
 * Add the 12hr mode
 * Add buttons to MQTT in a generic way.  Right now it only handles light buttons.  It would be better to broadcast all buttons presses and releases.
-* Allow replacing the existing temperature probes with other easier to obtain probes.  For example, using $10 1-wire digital probe could work just as well as the expensive replacement official probes.
+* Allow replacing the existing temperature probes with other easier to obtain probes.  For example, using $10 1-wire digital probe could work just as well as the expensive replacement official probes. This could be done with just a firmware change.
+* Add the ability to use different top units, such as a much cheaper Balboa display.
 * Maybe make a kit to sell if there's an interest.
-
+  
   
