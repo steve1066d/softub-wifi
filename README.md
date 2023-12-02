@@ -40,7 +40,7 @@ https://github.com/monroewilliams/softub/blob/master/hardware/reverse-engineerin
 
 ### Possible Improvements
 * Create a version of the PCB and software that replaces the stock controller board. Ideally it would have the same tabs and connections so it would be a simple replacement, not requiring any soldering or new crimping.  My thoughts is to provide a safety cut-off in hardware to shut the tub off with a simple circuit, so the safety of the original design remains.
-* Add the 12hr mode
+* Add the 12hr mode and economy modes that were added with the post 2011 controller boards.
 * Add buttons to MQTT in a generic way.  Right now it only handles light buttons.  It would be better to broadcast all buttons presses and releases.
 * Allow replacing the existing temperature probes with other easier to obtain probes.  For example, using $10 1-wire digital probe could work just as well as the expensive replacement official probes. This could be done with just a firmware change.
 * Add the ability to use different top units, such as a much cheaper Balboa display.
