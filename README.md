@@ -25,7 +25,7 @@ https://github.com/monroewilliams/softub/blob/master/hardware/reverse-engineerin
 ### It does this by:
 * It uses a custom circuit board with a Seed XIAO ESP32S3 that plugs into the controller board where the display and temperature sensor currently plug into.
 * The display and temperature sensors plug into the adapter circuit board.
-* It uses Adafruit 16 bit ADC and DAC boards to perform high accuracy temperature reads and reporiting.  (It is probably overkill, as the ESP32 has analog in and out, but the boards weren't very expensive).
+* It uses Adafruit 16 bit ADC and DAC boards to perform high accuracy temperature reads and reporting.  (It is probably overkill, as the ESP32 has analog in and out, but the boards weren't very expensive).
 * It communicates with both the board and display, and allows the tub to be controlled with both the buttons on the pump and Wifi.
 * It emulates pressing the hottub up and down buttons in response to change in the set temperature.
 * It adjusts the temperature reported to the stock Softub board as appropriate.  So if you set the temp at 102.5, it will keep the board at 102, but decrease the temp sent to the board by 1/2 degree. Or if you select over 104, it decreases the reported temp by the amount over 104. Otherwise it keeps the reported temperature as-is.
