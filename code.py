@@ -375,7 +375,7 @@ try:
     # board 1.0 has rx & tx backwards, so reverse them
     softub = Softub(board.IO8, board.IO9, board.RX, board.TX, callback)
     if pool:
-        mqtt_connect(pool, set_target)
+        mqtt_connect(pool, set_target, softub)
     if validate_analog:
         map_98 = _calibrate(98.0)
         map_104 = _calibrate(104.0)
@@ -405,7 +405,7 @@ try:
         if pool:
             server.poll()
             if current_temp:
-                mqtt_poll(current_temp, tt, softub.is_heat() or softub.is_filter())
+                mqtt_poll(current_temp, tt)
 except Exception as e:
     log(traceback.format_exception(e))
     time.sleep(30)

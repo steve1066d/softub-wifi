@@ -30,7 +30,7 @@ mqtt_error = False
 # We use the mode as an indication if the hot tub is on.  This can be turned on or off
 # by monitoring the power. If this or the board is in filter or heat mode, then this
 # will be on.
-heat_state = False
+power_state = False
 
 
 def connected(client, userdata, flags, rc):
@@ -39,6 +39,9 @@ def connected(client, userdata, flags, rc):
 
 def disconnected(client, userdata, rc):
     log("Disconnected from mqtt")
+
+def is_running():
+    return softub.is_running() or power_state
 
 
 def publish_if_changed(topic, value, persistent=False):
@@ -49,18 +52,23 @@ def publish_if_changed(topic, value, persistent=False):
         log(f"{topic} set to {value}")
 
 def message(client, topic, message):
-    global mqtt_due, heat_state
+    global mqtt_due, power_state
     log(f"New message on topic {topic}: {message}")
     if topic == temperature_command_topic:
         fn_set_temp(float(message))
         mqtt_due = calc_due_ticks_sec(0.2)
     elif topic == mode_command_topic:
-        heat_state = message == "heat"
-        mqtt_due = calc_due_ticks_sec(0.2)
+        if mesage.startswith("power"):
+            power_state = message == "power_on"
+            mqtt_due = calc_due_ticks_sec(0.2)
+        else:
+            request = message == "heat"
+            if request != is_running():
+                softub.click_button(softub.button_jets)
 
 
-def mqtt_connect(pool, _set_temp):
-    global mqtt_client, mqtt_due, fn_set_temp
+def mqtt_connect(pool, _set_temp, _softub):
+    global mqtt_client, mqtt_due, fn_set_temp, softub
     mqtt_client = MQTT.MQTT(
         broker=mqtt_broker,
         port=1883,
@@ -76,6 +84,7 @@ def mqtt_connect(pool, _set_temp):
     mqtt_client.on_disconnect = disconnected
     mqtt_client.on_message = message
     fn_set_temp = _set_temp
+    softub = _softub
     try:
         for i in range(3):
             try:
@@ -99,7 +108,7 @@ def mqtt_button_light():
     mqtt_client.publish(button_feed, "press")
     log("published light button")
 
-def mqtt_poll(_temp, _set_temp, _running):
+def mqtt_poll(_temp, _set_temp):
     global mqtt_due, mqtt_error
     if not mqtt_client:
         return
@@ -122,7 +131,7 @@ def mqtt_poll(_temp, _set_temp, _running):
                     # report heat if home assistant reports the heat is on, or if the
                     # heat or filter indicators are on.
                     publish_if_changed(
-                        mode_state_topic, "heat" if heat_state or _running else "off"
+                        mode_state_topic, "heat" if is_running() else "off"
                     )
                 except Exception:
                     pass

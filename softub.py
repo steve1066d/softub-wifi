@@ -4,6 +4,19 @@ from ticks import calc_due_ticks_ms, calc_due_ticks_sec, is_due
 from log import log
 
 
+
+# Known codes that the Softub sends:
+# This information is for future use.  These codes could be sent but they currently aren't handled correctly.
+# "IPS" (1P5) Insufficent power supply.  The voltage is not high enough.
+# " P "  Displayed when the pump is off
+# "P01"  Insufficient Heating. Called if the pump has been running 4 hours but has not had a 1 degree change in temperature.
+# "SP1" (5P1) Special temp mode.  This will alternate between 5P1 and the actual temp every 5 seconds.
+
+# Special button presses:
+# Overnight mode:  press and hold light & up and jets buttons for 10 seconds to turn on, light and down to turn off.
+# Economy mode:  press and hold light and up for 10 seconds.  It will only run once a day to bring up to temp
+# Special temperature:  (Used to set temp to 105 or 106 on newer tubs).  Press and hold jets and up buttons for 10 seconds.
+
 class Softub:
     # After the up or down arrows is pressed to change the temperature, show the
     # set temp for this long
@@ -38,6 +51,10 @@ class Softub:
     # The buttons currently being sent to board
     button_state = 0
     button_timeout = 0
+
+    # This is the amount of time left that the pump will be running after the jets
+    # button is pressed.
+    jet_timeout = 0
 
     # If this is non-zero it indicates that the temperature returned is the set temp
     end_show_setting_seconds = 0
@@ -126,7 +143,7 @@ class Softub:
                     + str(raw[0])
                 )
                 return
-            if True:  # not self.display_p and self.end_show_setting_seconds:
+            if self.display_p and self.end_show_setting_seconds:
                 # log(" ".join("%02x" % b for b in raw))
                 self.board_led_temp = (
                     (raw[2] % 10) * 100 + (raw[3] % 10) * 10 + (raw[4] % 10)
@@ -152,6 +169,12 @@ class Softub:
 
     def is_filter(self):
         return self.board_buffer[1] & 0x10
+
+    # This does its best to determine if the hot tub is currently running.
+    # It should be the case only if the heat or filter lights are on, or
+    # if the jet button was pressed within 20 minutes.
+    def is_running(self):
+        return self.board_buffer[1] or self.jet_timeout
 
     def get_temp(self):
         return self.board_led_temp
@@ -223,6 +246,12 @@ class Softub:
     def fn_board_update(self):
         encoded = (self.button_state << 4) | (self.button_state ^ 0x0F)
         self.uart_board.write(bytes([encoded]))
+        if self.button_jets & self.button_state:  # if the jets button was pressed
+            # if the jet state is on, clear it, otherwise set it.
+            if jet_timeout:
+                jet_timeout = 0
+            else:
+                jet_timeout = calc_due_ticks_sec(60 * 20)
         # log(encoded)
         if is_due(self.button_timeout):
             if self.button_state == 0:
@@ -241,6 +270,8 @@ class Softub:
     def poll(self):
         self.read_buttons()
         self.read_board()
+        if is_due(self.jet_timeout):
+            self.jet_timeout = 0
         if is_due(self.due):
             while is_due(self.due):
                 self.due += self.polling_ms
