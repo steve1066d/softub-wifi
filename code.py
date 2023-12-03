@@ -172,18 +172,20 @@ def callback():
     tt = config["target_temp"]
     if not softub.button_timeout:
         # There is not currently a button press in process
-        change = None
-        if float(softub.board_led_temp) < math.floor(tt):
-            change = softub.button_up
-            log("change", "up")
-        elif softub.board_led_temp > math.floor(tt):
-            change = softub.button_down
-            log("change", "down")
-        if change and (softub.board_led_temp < 104 or tt < 104):
-            # since 104 is the max temp, don't make the change if it is at the max.
-            softub.click_button(change)
-            top_buttons_ms = softub.top_buttons_ms
-            log("clicked")
+        if softub.board_led_temp:
+            change = 0
+            if float(softub.board_led_temp) < math.floor(tt):
+                change = softub.button_up
+                log("change", "up")
+            elif softub.board_led_temp > math.floor(tt):
+                change = softub.button_down
+                log("change", "down")
+            if change and (softub.board_led_temp < 104 or tt < 104):
+                # Only adjust the board setting if it isn't already at the min or max.
+                if change > 0 or softub.board_led_temp > 80:
+                    softub.click_button(change)
+                    top_buttons_ms = softub.top_buttons_ms
+                    log("clicked")
     # Display the current temp or the set point if there has been a recent change
     if set_point_timeout and not is_due(set_point_timeout):
         softub.display_temperature(tt)
@@ -199,7 +201,9 @@ def to_F(c_deg: float):
 
 
 def display(f_deg: float):
-    return f_deg if config["unit"] == "F" else (f_deg - 32) * (5 / 9)
+    if f_deg is None:
+        return None
+    return f'{f_deg if config["unit"] == "F" else (f_deg - 32) * (5 / 9):.2f}'
 
 
 def set_target(deg: float):
@@ -279,11 +283,11 @@ def webpage():
     <h1>{hostname}</h1>
     <br>
     <p class="dotted">The current temperature is
-    <b>{display(current_temp):.2f}°{config["unit"]}</span></b><br>
+    <b>{display(current_temp)}°{config["unit"]}</span></b><br>
     <p class="dotted">The target temperature is
-    <b>{display(config["target_temp"]):.2f}°{config["unit"]}</span></b><br>
+    <b>{display(config["target_temp"])}°{config["unit"]}</span></b><br>
     <p class="dotted">The CPU temperature is
-    {display(to_F(microcontroller.cpu.temperature)):.0f}°{config["unit"]}</p><br>
+    {display(to_F(microcontroller.cpu.temperature))}°{config["unit"]}</p><br>
     Increase or decrease the temp with these buttons:<br>
     <p><form accept-charset="utf-8" method="POST">
     <button class="button" name="TEMP" value="-{config["increment"]}" type="submit">-
@@ -373,7 +377,7 @@ def _calibrate(value):
 
 try:
     # board 1.0 has rx & tx backwards, so reverse them
-    softub = Softub(board.IO8, board.IO9, board.RX, board.TX, callback)
+    softub = Softub(board.IO8, board.IO9, board.RX, board.TX, callback, True)
     if pool:
         mqtt_connect(pool, set_target, softub)
     if validate_analog:
@@ -397,9 +401,14 @@ try:
             temp_due = calc_due_ticks_sec(config["poll_seconds"])
             temp = get_temperature()
             set_current_temp(temp)
-            # Adjusts the reported temp to account for > 104 temps,
-            # and fraction of degree settings.
-            report_temp = current_temp - (tt - int(min(104, tt)))
+            if tt < 80:
+                # The minimum that the board can be set to is 80, so if cooler
+                # is desired, change the reported temp
+                report_temp = current_temp + (80 - tt)
+            else:
+                # Adjusts the reported temp to account for > 104 temps,
+                # and fraction of degree settings.
+                report_temp = current_temp - (tt - int(min(104, tt)))
             set_temperature(report_temp)
         softub.poll()
         if pool:

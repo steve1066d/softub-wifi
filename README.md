@@ -20,7 +20,9 @@ https://github.com/monroewilliams/softub/blob/master/hardware/reverse-engineerin
 * It can optionally display temperatures in tenth of a degrees.  (Over 100 degrees would not show the "1", as there are only 3 digits available on the display)
 * It can integrate with Home Assistant using MQTT.  It appears as a thermostat, and can be controlled with Alexa, if configured.
 * It can report button presses back to MQTT.  So for instance you could configure Home Assistant to turn off lights if the Softub lights button is pressed.
-* It also monitors the temperature inside the pump (actually the CPU temperature which is about 30 degreees F over ambient). This could be used to warn of a cooling coil blockage or failure oon the pump.
+* It also monitors the temperature inside the pump (actually the CPU temperature which is about 30 degreees F over ambient). This could be used to warn of a cooling coil blockage or failure on the pump.
+* If the board shows any error codes (Like IPS), they will be shown instead of the temperature.
+* The special modes (like 12 hour or 24 hour modes), still work as expected, as any botton presses besides up and down are passed through to the controller.
 
 ### It does this by:
 * It uses a custom circuit board with a Seed XIAO ESP32S3 that plugs into the controller board where the display and temperature sensor currently plug into.

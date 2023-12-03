@@ -123,25 +123,18 @@ def mqtt_poll(_temp, _set_temp):
             if not mqtt_client.is_connected():
                 mqtt_client.reconnect()
             if mqtt_client.is_connected():
-                try:
-                    publish_if_changed(current_temperature_topic, round(_temp, 1), True)
-                    publish_if_changed(
-                        temperature_state_topic, round(_set_temp, 1), True
-                    )
-                    # report heat if home assistant reports the heat is on, or if the
-                    # heat or filter indicators are on.
-                    publish_if_changed(
-                        mode_state_topic, "heat" if is_running() else "off"
-                    )
-                except Exception:
-                    pass
+                publish_if_changed(current_temperature_topic, round(_temp, 1), True)
+                publish_if_changed(
+                    temperature_state_topic, round(_set_temp, 1), True
+                )
+                # report heat if home assistant reports the heat is on, or if the
+                # heat or filter indicators are on.
+                publish_if_changed(
+                    mode_state_topic, "heat" if is_running() else "off"
+                )
             mqtt_due = ticks_add(mqtt_due, 60000)
             mqtt_error = False
-    except MQTT.MMQTTException as e:
-        mqtt_error = True
-        mqtt_due = calc_due_ticks_sec(300)
-        log(traceback.format_exception(e))
-    except BrokenPipeError as e:
+    except Exception as e:
         mqtt_error = True
         mqtt_due = calc_due_ticks_sec(300)
         log(traceback.format_exception(e))

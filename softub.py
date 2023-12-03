@@ -25,11 +25,14 @@ class Softub:
     # I think its better to use 0, even though it will show low temps.
     p_setting_seconds = 2 * 60
     # The last set temparature returned by board
-    board_led_temp = 102
-    # The temperature to report to the top unit
-    top_led_temp = 0
-    # Sent by newer boards for when pump isn't running.
-    board_p = False
+    board_led_temp = None
+    # Newer boards that show the set time only after changing it.
+    p_style = False
+    # This indicates that there's an error or non-numeric state. If so show that instead of the temp
+    special_message = False
+    # a short timer to give the controller a chance to send out the new temperature
+    set_temp_ready = calc_due_ticks_ms(1)
+
     # How often the status should be updated
     polling_ms = 333
     button_ms = 200
@@ -38,7 +41,8 @@ class Softub:
     display_callback = None
     # If true, it will display temps in .1 increments, without the hundreds value
     display_tenths = True
-
+    # Indicates if the board is a newer style that display P when at temp.
+    p_style=False
     # A copy of the LED's on the top unit
     display_buffer = bytearray([0x02, 0x00, 0x01, 0x00, 0x00, 0x01, 0xFF])
     # A copy of the last update from the board
@@ -73,6 +77,7 @@ class Softub:
         top_rx,
         display_callback=None,
         display_tenths=True,
+        p_style=False
     ):
         self.uart_board = busio.UART(
             board_tx, board_rx, baudrate=2400, receiver_buffer_size=13
@@ -83,6 +88,7 @@ class Softub:
         self.due = calc_due_ticks_sec(0)
         self.display_callback = display_callback
         self.display_tenths = display_tenths
+        self.p_style = p_style
 
     ###
     #  Methods to read state from Softub
@@ -129,10 +135,10 @@ class Softub:
                 raw.extend(byte)
                 raw = list(raw)
             sum = 0
-            self.display_p = False
+            has_p = False
             for i in range(1, 5):
                 sum += raw[i]
-                self.display_p |= raw[i] == 11
+                has_p |= raw[i] == 11
             if (sum & 0xFF) != raw[5]:
                 log(
                     "invalid checksum "
@@ -143,11 +149,14 @@ class Softub:
                     + str(raw[0])
                 )
                 return
-            if self.display_p and self.end_show_setting_seconds:
+            # There a P message or blank, but not " P "
+            self.special_message = has_p and raw[2:5] != bytes([10,11,10]) or raw[2:5] == bytes([10,10,10])
+            if not has_p and is_due(self.set_temp_ready):
                 # log(" ".join("%02x" % b for b in raw))
                 self.board_led_temp = (
                     (raw[2] % 10) * 100 + (raw[3] % 10) * 10 + (raw[4] % 10)
                 )
+                self.set_temp_ready = 0
             self.board_buffer = raw
             self.debug_board = (
                 str(self.board_led_temp)
@@ -191,19 +200,23 @@ class Softub:
         self.button_timeout = calc_due_ticks_ms(self.button_ms)
 
     def display_temperature(self, tempF):
-        if self.display_tenths:
-            temp = int(round(tempF * 10))
-            if temp >= 1000:
-                if temp % 10:
-                    temp = temp % 1000
-                else:
-                    temp = temp // 10
-            h = temp // 100
+        if self.special_message:
+            # show warnings like IPS instead of the temperature.
+            self.display_buffer[2:5] = self.board_buffer[2:5]
         else:
-            temp = int(round(tempF))
-            # 0A is blank
-            h = 0x0A if temp < 100 else temp // 100
-        self.display_set_digits(h, int((temp // 10) % 10), int(temp % 10))
+            if self.display_tenths:
+                temp = int(round(tempF * 10))
+                if temp >= 1000:
+                    if temp % 10:
+                        temp = temp % 1000
+                    else:
+                        temp = temp // 10
+                h = temp // 100
+            else:
+                temp = int(round(tempF))
+                # 0A is blank
+                h = 0x0A if temp < 100 else temp // 100
+            self.display_set_digits(h, int((temp // 10) % 10), int(temp % 10))
 
     # Values in digit places:
     # 0 - 9 - digit
@@ -248,10 +261,14 @@ class Softub:
         self.uart_board.write(bytes([encoded]))
         if self.button_jets & self.button_state:  # if the jets button was pressed
             # if the jet state is on, clear it, otherwise set it.
-            if jet_timeout:
-                jet_timeout = 0
+            if self.jet_timeout:
+                self.jet_timeout = 0
             else:
-                jet_timeout = calc_due_ticks_sec(60 * 20)
+                self.jet_timeout = calc_due_ticks_sec(60 * 20)
+        if self.button_up == self.button_state or self.button_down == self.button_state:
+            # Give the board 1/3 second to display the set temperature.
+            self.board_led_temp = None
+            self.set_temp_ready = calc_due_ticks_ms(333)
         # log(encoded)
         if is_due(self.button_timeout):
             if self.button_state == 0:
