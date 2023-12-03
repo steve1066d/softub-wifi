@@ -280,10 +280,10 @@ class Softub:
 
     def get_buttons(self):
         buttons = []
-        if self.top_buttons & self.button_down:
-            buttons.append("down")
         if self.top_buttons & self.button_up:
             buttons.append("up")
+        if self.top_buttons & self.button_down:
+            buttons.append("down")
         if self.top_buttons & self.button_jets:
             buttons.append("jets")
         if self.top_buttons & self.button_light:
