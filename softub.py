@@ -150,7 +150,7 @@ class Softub:
                 )
                 return
             # There a P message or blank, but not " P "
-            self.special_message = has_p and raw[2:5] != bytes([10,11,10]) or raw[2:5] == bytes([10,10,10])
+            self.special_message = has_p and raw[2:5] != bytes([10, 11, 10]) or raw[2:5] == bytes([10,10,10])
             if not has_p and is_due(self.set_temp_ready):
                 # log(" ".join("%02x" % b for b in raw))
                 self.board_led_temp = (
@@ -276,6 +276,19 @@ class Softub:
             else:
                 self.button_state = 0
                 self.button_timeout = calc_due_ticks_ms(self.button_ms)
+
+
+    def get_buttons(self):
+        buttons = []
+        if self.top_buttons & self.button_down:
+            buttons.append("down")
+        if self.top_buttons & self.button_up:
+            buttons.append("up")
+        if self.top_buttons & self.button_jets:
+            buttons.append("jets")
+        if self.top_buttons & self.button_light:
+            buttons.append("light")
+        return '|'.join(buttons)
 
     # The callback for updating. The default is to transmit the data unchanged
     # between the board and the display

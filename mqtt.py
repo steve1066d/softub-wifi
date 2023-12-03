@@ -104,36 +104,35 @@ def mqtt_connect(pool, _set_temp, _softub):
         mqtt_client = None
 
 
-def mqtt_button_light():
-    mqtt_client.publish(button_feed, "press")
-    log("published light button")
-
 def mqtt_poll(_temp, _set_temp):
     global mqtt_due, mqtt_error
     if not mqtt_client:
         return
     try:
+        if mqtt_error and not is_due(mqtt_due):
+            return
         if mqtt_client.is_connected():
             # Poll the message queue
             mqtt_client.loop()
-        # Process every minute or if there's a change in the set point
-        if is_due(mqtt_due) or (
-            not mqtt_error and states.get(temperature_state_topic) != _set_temp
-        ):
-            if not mqtt_client.is_connected():
-                mqtt_client.reconnect()
-            if mqtt_client.is_connected():
-                publish_if_changed(current_temperature_topic, round(_temp, 1), True)
-                publish_if_changed(
-                    temperature_state_topic, round(_set_temp, 1), True
-                )
-                # report heat if home assistant reports the heat is on, or if the
-                # heat or filter indicators are on.
-                publish_if_changed(
-                    mode_state_topic, "heat" if is_running() else "off"
-                )
-            mqtt_due = ticks_add(mqtt_due, 60000)
-            mqtt_error = False
+            # Process every minute or if there's a change in the set point
+            publish_if_changed(button_feed, softub.get_buttons())
+            if is_due(mqtt_due) or (
+                not mqtt_error and states.get(temperature_state_topic) != _set_temp
+            ):
+                if not mqtt_client.is_connected():
+                    mqtt_client.reconnect()
+                if mqtt_client.is_connected():
+                    publish_if_changed(current_temperature_topic, round(_temp, 1), True)
+                    publish_if_changed(
+                        temperature_state_topic, round(_set_temp, 1), True
+                    )
+                    # report heat if home assistant reports the heat is on, or if the
+                    # heat or filter indicators are on.
+                    publish_if_changed(
+                        mode_state_topic, "heat" if is_running() else "off"
+                    )
+                mqtt_due = ticks_add(mqtt_due, 60000)
+                mqtt_error = False
     except Exception as e:
         mqtt_error = True
         mqtt_due = calc_due_ticks_sec(300)

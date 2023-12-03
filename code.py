@@ -1,6 +1,6 @@
 """Softub WiFi Adapter"""
 
-from mqtt import mqtt_connect, mqtt_poll, mqtt_button_light
+from mqtt import mqtt_connect, mqtt_poll
 import adafruit_ntp
 import board
 import busio
@@ -152,8 +152,6 @@ def callback():
             elif softub.top_buttons == softub.button_up:
                 adjust = config["increment"]
                 log("inc")
-            elif softub.top_buttons == softub.button_light:
-                mqtt_button_light()
             else:
                 # some other button was pressed.  Just send it to the controller.
                 log("buttons:", softub.top_buttons)
