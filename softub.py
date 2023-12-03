@@ -279,6 +279,8 @@ class Softub:
 
 
     def get_buttons(self):
+        if not self.top_buttons:
+            return ""
         buttons = []
         if self.top_buttons & self.button_up:
             buttons.append("up")

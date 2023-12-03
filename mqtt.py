@@ -58,7 +58,7 @@ def message(client, topic, message):
         fn_set_temp(float(message))
         mqtt_due = calc_due_ticks_sec(0.2)
     elif topic == mode_command_topic:
-        if mesage.startswith("power"):
+        if message.startswith("power"):
             power_state = message == "power_on"
             mqtt_due = calc_due_ticks_sec(0.2)
         else:
@@ -116,6 +116,9 @@ def mqtt_poll(_temp, _set_temp):
             mqtt_client.loop()
             # Process every minute or if there's a change in the set point
             publish_if_changed(button_feed, softub.get_buttons())
+            publish_if_changed(
+                mode_state_topic, "heat" if is_running() else "off"
+            )
             if is_due(mqtt_due) or (
                 not mqtt_error and states.get(temperature_state_topic) != _set_temp
             ):
@@ -128,9 +131,6 @@ def mqtt_poll(_temp, _set_temp):
                     )
                     # report heat if home assistant reports the heat is on, or if the
                     # heat or filter indicators are on.
-                    publish_if_changed(
-                        mode_state_topic, "heat" if is_running() else "off"
-                    )
                 mqtt_due = ticks_add(mqtt_due, 60000)
                 mqtt_error = False
     except Exception as e:
