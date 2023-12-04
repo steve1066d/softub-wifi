@@ -174,16 +174,14 @@ def callback():
             change = 0
             if float(softub.board_led_temp) < math.floor(tt):
                 change = softub.button_up
-                log("change", "up")
             elif softub.board_led_temp > math.floor(tt):
                 change = softub.button_down
-                log("change", "down")
             if change and (softub.board_led_temp < 104 or tt < 104):
                 # Only adjust the board setting if it isn't already at the min or max.
                 if change > 0 or softub.board_led_temp > 80:
                     softub.click_button(change)
                     top_buttons_ms = softub.top_buttons_ms
-                    log("clicked")
+                    log("clicked", change)
     # Display the current temp or the set point if there has been a recent change
     if set_point_timeout and not is_due(set_point_timeout):
         softub.display_temperature(tt)
