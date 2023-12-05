@@ -64,6 +64,12 @@ A2 = board.IO3
 # so do this even if we we are using an i2c a2d.
 analog_in = AnalogIn(A2)
 dummy = AnalogIn(A1)
+pump_off_temp = None
+# This is the multiplier to use when reporting temperatures when the pump is off.
+# Less than 0 it will cause less and longer cycles, greater than 1, more cycles
+# None (or 1) it is unchanged.
+change_cycles = .5
+
 
 server = Server(None, None)
 pool = None
@@ -370,12 +376,18 @@ def _calibrate(value):
     # log()
     return value + old_delta
 
+def power_state_callback(on):
+    global pump_off_temp
+    if not on:
+        pump_off_temp = current_temp
+    else:
+        pump_off_temp = None
 
 try:
     # board 1.0 has rx & tx backwards, so reverse them
     softub = Softub(board.IO8, board.IO9, board.RX, board.TX, callback, True)
     if pool:
-        mqtt_connect(pool, set_target, softub)
+        mqtt_connect(pool, set_target, softub, power_state_callback)
     if validate_analog:
         map_98 = _calibrate(98.0)
         map_104 = _calibrate(104.0)
@@ -397,14 +409,17 @@ try:
             temp_due = calc_due_ticks_sec(config["poll_seconds"])
             temp = get_temperature()
             set_current_temp(temp)
+            report_temp = current_temp
+            if change_cycles and pump_off_temp and report_temp < pump_off_temp:
+                report_temp += (pump_off_temp - report_temp) * change_cycles
             if tt < 80:
                 # The minimum that the board can be set to is 80, so if cooler
                 # is desired, change the reported temp
-                report_temp = current_temp + (80 - tt)
+                report_temp += (80 - tt)
             else:
                 # Adjusts the reported temp to account for > 104 temps,
                 # and fraction of degree settings.
-                report_temp = current_temp - (tt - int(min(104, tt)))
+                report_temp -= (tt - int(min(104, tt)))
             set_temperature(report_temp)
         softub.poll()
         if pool:

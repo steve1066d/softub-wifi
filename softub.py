@@ -4,18 +4,22 @@ from ticks import calc_due_ticks_ms, calc_due_ticks_sec, is_due
 from log import log
 
 
+"""
+ Known codes that the Softub sends:
+ " P ":  Displayed when the pump is off. This will be ignored by this class.
 
-# Known codes that the Softub sends:
-# This information is for future use.  These codes could be sent but they currently aren't handled correctly.
-# "IPS" (1P5) Insufficent power supply.  The voltage is not high enough.
-# " P "  Displayed when the pump is off
-# "P01"  Insufficient Heating. Called if the pump has been running 4 hours but has not had a 1 degree change in temperature.
-# "SP1" (5P1) Special temp mode.  This will alternate between 5P1 and the actual temp every 5 seconds.
+ The following codes are known to be sent by the board.  If these or any other codes that contain a P are
+ displayed by the board it will show on the display instead of the temerature.  However, I don't do any
+ special processing if these are received.
+ "IPS": (1P5) Insufficent power supply.  The voltage is not high enough.
+ "P01":  Insufficient Heating. Called if the pump has been running 4 hours but has not had a 1 degree change in temperature.
+ "SP1": (5P1) Special temp mode.  This will alternate between 5P1 and the actual temp every 5 seconds.
 
-# Special button presses:
-# Overnight mode:  press and hold light & up and jets buttons for 10 seconds to turn on, light and down to turn off.
-# Economy mode:  press and hold light and up for 10 seconds.  It will only run once a day to bring up to temp
-# Special temperature:  (Used to set temp to 105 or 106 on newer tubs).  Press and hold jets and up buttons for 10 seconds.
+ Special button presses (these are passed through but not specifically handled)
+ Overnight mode:  press and hold light & up and jets buttons for 10 seconds to turn on, light and down to turn off.
+ Economy mode:  press and hold light and up for 10 seconds.  It will only run once a day to bring up to temp
+ Special temperature:  (Used to set temp to 105 or 106 on newer tubs).  Press and hold jets and up buttons for 10 seconds.
+"""
 
 class Softub:
     # After the up or down arrows is pressed to change the temperature, show the
@@ -292,8 +296,8 @@ class Softub:
             buttons.append("light")
         return '|'.join(buttons)
 
-    # The callback for updating. The default is to transmit the data unchanged
-    # between the board and the display
+    # The default  callback just transmits the data unchanged
+    # between the board and the display.
     def callback(self):
         self.display_buffer = bytearray(self.board_buffer[:])
         self.button_state = self.top_buttons

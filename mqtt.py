@@ -31,7 +31,7 @@ mqtt_error = False
 # by monitoring the power. If this or the board is in filter or heat mode, then this
 # will be on.
 power_state = False
-
+callback = None
 
 def connected(client, userdata, flags, rc):
     log("Connected to mqtt")
@@ -50,6 +50,8 @@ def publish_if_changed(topic, value, persistent=False):
         mqtt_client.publish(topic, value, persistent)
         states[topic] = value
         log(f"{topic} set to {value}")
+        return True
+    return False
 
 def message(client, topic, message):
     global mqtt_due, power_state
@@ -67,8 +69,8 @@ def message(client, topic, message):
                 softub.click_button(softub.button_jets)
 
 
-def mqtt_connect(pool, _set_temp, _softub):
-    global mqtt_client, mqtt_due, fn_set_temp, softub
+def mqtt_connect(pool, _set_temp, _softub, _callback):
+    global mqtt_client, mqtt_due, fn_set_temp, softub, callback
     mqtt_client = MQTT.MQTT(
         broker=mqtt_broker,
         port=1883,
@@ -78,6 +80,7 @@ def mqtt_connect(pool, _set_temp, _softub):
         socket_timeout=1,
         connect_retries=1,
     )
+    callback = _callback
 
     # mqtt_client.enable_logger(logging, logging.DEBUG)
     mqtt_client.on_connect = connected
@@ -116,9 +119,8 @@ def mqtt_poll(_temp, _set_temp):
             mqtt_client.loop()
             # Process every minute or if there's a change in the set point
             publish_if_changed(button_feed, softub.get_buttons())
-            publish_if_changed(
-                mode_state_topic, "heat" if is_running() else "off"
-            )
+            if publish_if_changed(mode_state_topic, "heat" if is_running() else "off"):
+                callback(is_running())
             if is_due(mqtt_due) or (
                 not mqtt_error and states.get(temperature_state_topic) != _set_temp
             ):
