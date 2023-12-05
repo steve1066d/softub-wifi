@@ -55,18 +55,22 @@ def publish_if_changed(topic, value, persistent=False):
 
 def message(client, topic, message):
     global mqtt_due, power_state
-    log(f"New message on topic {topic}: {message}")
     if topic == temperature_command_topic:
+        log(f"New message on topic {topic}: {message}")
         fn_set_temp(float(message))
         mqtt_due = calc_due_ticks_sec(0.2)
     elif topic == mode_command_topic:
         if message.startswith("power"):
-            power_state = message == "power_on"
-            mqtt_due = calc_due_ticks_sec(0.2)
+            new_state = message == "power_on"
+            if new_state != power_state:
+                power_state = new_state
+                mqtt_due = calc_due_ticks_sec(0.2)
+                log(f"New message on topic {topic}: {message}")
         else:
             request = message == "heat"
             if request != is_running():
                 softub.click_button(softub.button_jets)
+            log(f"New message on topic {topic}: {message}")
 
 
 def mqtt_connect(pool, _set_temp, _softub, _callback):
