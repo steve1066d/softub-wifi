@@ -25,37 +25,25 @@ import adafruit_ad569x
 import traceback
 import storage
 from log import log
+import config
 
 disable_httpd = False
 
-config = None
+config = config.config
 try:
     storage.remount("/", False)
     writable = True
+    # If running without usb, don't autoreload
+    supervisor.runtime.autoreload = False
     with open("config.json", "r") as f:
-        config = json.load(f)
+        setpoint = json.load(f)
 except Exception as e:
     log(e)
     writable = False
     log("Could not write to nvram.  Using defaults")
-if not config:
-    config = {
-        # The target temp.
+    setpoint = {
         "target_temp": 102,
-        # Set to F or C for Farenheight or Celsius
-        "unit": "F",
-        # how often the temperature should be checked
-        "poll_seconds": 1,
-        # the degree increment the + and - buttons should use on the web page
-        # and softub buttons
-        "increment": 0.5,
-        # Minimum allowable target temperature
-        "minimum_temp": 50,
-        # Maximum allowable target temperature
-        "maximum_temp": 106,
-        "show_settings_seconds": 5,
     }
-# No user servicable parts below
 
 A0 = board.IO1
 A1 = board.IO2
@@ -66,10 +54,10 @@ analog_in = AnalogIn(A2)
 dummy = AnalogIn(A1)
 pump_off_temp = None
 # This is the multiplier to use when reporting temperatures when the pump is off.
-# Less than 0 it will cause less and longer cycles, greater than 1, more cycles
+# Less than 1 it will cause less and longer cycles, greater than 1, more cycles
 # None (or 1) it is unchanged.
-change_cycles = .5
-
+change_cycles = config["change_cycles"]
+calibration = config["calibration"]
 
 server = Server(None, None)
 pool = None
@@ -172,8 +160,8 @@ def callback():
         repeating = None
     top_buttons_ms = softub.top_buttons_ms
     if adjust:
-        set_target(config["target_temp"] + adjust)
-    tt = config["target_temp"]
+        set_target(setpoint["target_temp"] + adjust)
+    tt = setpoint["target_temp"]
     if not softub.button_timeout:
         # There is not currently a button press in process
         if softub.board_led_temp:
@@ -212,12 +200,12 @@ def set_target(deg: float):
     global set_point_timeout
     if not deg:
         raise Exception()
-    if config["target_temp"] == deg:
+    if setpoint["target_temp"] == deg:
         return
     log(f"Changing setting to {deg}")
     deg = max(deg, config["minimum_temp"])
     deg = min(deg, config["maximum_temp"])
-    config["target_temp"] = deg
+    setpoint["target_temp"] = deg
     set_point_timeout = calc_due_ticks_sec(config["show_settings_seconds"])
     save_config()
 
@@ -227,7 +215,7 @@ def get_temperature() -> float:
         x = analog_in.voltage * 100
     else:
         x = analog_in.value / 65535 * 3.3 * 100
-    return x
+    return x + calibration
 
 
 def set_current_temp(temp: float):
@@ -244,7 +232,7 @@ def save_config():
     log("Saving config")
     try:
         with open("config.json", "w") as f:
-            f.write(json.dumps(config))
+            f.write(json.dumps(setpoint))
     except OSError:
         # ignore
         pass
@@ -287,7 +275,7 @@ def webpage():
     <p class="dotted">The current temperature is
     <b>{display(current_temp)}°{config["unit"]}</span></b><br>
     <p class="dotted">The target temperature is
-    <b>{display(config["target_temp"])}°{config["unit"]}</span></b><br>
+    <b>{display(setpoint["target_temp"])}°{config["unit"]}</span></b><br>
     <p class="dotted">The CPU temperature is
     {display(to_F(microcontroller.cpu.temperature))}°{config["unit"]}</p><br>
     Increase or decrease the temp with these buttons:<br>
@@ -317,7 +305,7 @@ def reboot(request: Request):
 def debug(request: Request):
     value = {
         "current": current_temp,
-        "target": config["target_temp"],
+        "target": setpoint["target_temp"],
         "cpu": to_F(microcontroller.cpu.temperature),
         "board": softub.board_led_temp,
         "heat": softub.is_heat(),
@@ -333,7 +321,7 @@ def base(request: Request):
     else:
         value = {
             "current": current_temp,
-            "target": config["target_temp"],
+            "target": setpoint["target_temp"],
             "cpu": to_F(microcontroller.cpu.temperature),
         }
         return Response(request, json.dumps(value), content_type="text/json")
@@ -346,13 +334,13 @@ def buttonpress(request: Request):
         if temp == "toggle":
             softub.click_button(softub.button_jets)
         else:
-            set_target(config["target_temp"] + float(temp))
+            set_target(setpoint["target_temp"] + float(temp))
         return Response(request, webpage(), content_type="text/html")
     else:
         value = request.json()
         log(json.dumps(value))
     clock = 0
-    log("set", config["target_temp"])
+    log("set", setpoint["target_temp"])
 
 
 # Use the a2d converter to determine the actual values to use
@@ -404,7 +392,7 @@ try:
     uart_clock = 0
 
     while True:
-        tt = config["target_temp"]
+        tt = setpoint["target_temp"]
         if is_due(temp_due):
             temp_due = calc_due_ticks_sec(config["poll_seconds"])
             temp = get_temperature()
