@@ -8,18 +8,24 @@ from log import log
  Known codes that the Softub sends:
  " P ":  Displayed when the pump is off. This will be ignored by this class.
 
- The following codes are known to be sent by the board.  If these or any other codes that contain a P are
- displayed by the board it will show on the display instead of the temerature.  However, I don't do any
- special processing if these are received.
+ The following codes are known to be sent by the board.  If these or any other codes
+ that contain a P are displayed by the board it will show on the display instead of the
+ temperature. However, I don't do any special processing if these are received.
  "IPS": (1P5) Insufficent power supply.  The voltage is not high enough.
- "P01":  Insufficient Heating. Called if the pump has been running 4 hours but has not had a 1 degree change in temperature.
- "SP1": (5P1) Special temp mode.  This will alternate between 5P1 and the actual temp every 5 seconds.
+ "P01":  Insufficient Heating. Called if the pump has been running 4 hours but has not
+         had a 1 degree change in temperature.
+ "SP1": (5P1) Special temp mode.  This will alternate between 5P1 and the actual temp
+        every 5 seconds.
 
  Special button presses (these are passed through but not specifically handled)
- Overnight mode:  press and hold light & up and jets buttons for 10 seconds to turn on, light and down to turn off.
- Economy mode:  press and hold light and up for 10 seconds.  It will only run once a day to bring up to temp
- Special temperature:  (Used to set temp to 105 or 106 on newer tubs).  Press and hold jets and up buttons for 10 seconds.
+ Overnight mode:  press and hold light & up and jets buttons for 10 seconds to turn on,
+                  light and down to turn off.
+ Economy mode:  press and hold light and up for 10 seconds.  It will only run once a
+                day to bring up to temp
+ Special temperature:  (Used to set temp to 105 or 106 on newer tubs).  Press and hold
+                       jets and up buttons for 10 seconds.
 """
+
 
 class Softub:
     # After the up or down arrows is pressed to change the temperature, show the
@@ -32,7 +38,8 @@ class Softub:
     board_led_temp = None
     # Newer boards that show the set time only after changing it.
     p_style = False
-    # This indicates that there's an error or non-numeric state. If so show that instead of the temp
+    # This indicates that there's an error or non-numeric state.
+    # If so show that instead of the temp
     special_message = False
     # a short timer to give the controller a chance to send out the new temperature
     set_temp_ready = calc_due_ticks_ms(1)
@@ -46,7 +53,7 @@ class Softub:
     # If true, it will display temps in .1 increments, without the hundreds value
     display_tenths = True
     # Indicates if the board is a newer style that display P when at temp.
-    p_style=False
+    p_style = False
     # A copy of the LED's on the top unit
     display_buffer = bytearray([0x02, 0x00, 0x01, 0x00, 0x00, 0x01, 0xFF])
     # A copy of the last update from the board
@@ -81,7 +88,7 @@ class Softub:
         top_rx,
         display_callback=None,
         display_tenths=True,
-        p_style=False
+        p_style=False,
     ):
         self.uart_board = busio.UART(
             board_tx, board_rx, baudrate=2400, receiver_buffer_size=13
@@ -154,7 +161,11 @@ class Softub:
                 )
                 return
             # There a P message or blank, but not " P "
-            self.special_message = has_p and raw[2:5] != bytes([10, 11, 10]) or raw[2:5] == bytes([10,10,10])
+            self.special_message = (
+                has_p
+                and raw[2:5] != bytes([10, 11, 10])
+                or raw[2:5] == bytes([10, 10, 10])
+            )
             if not has_p and is_due(self.set_temp_ready):
                 # log(" ".join("%02x" % b for b in raw))
                 self.board_led_temp = (
@@ -172,7 +183,7 @@ class Softub:
             # log(self.debug_board)
 
     def get_digit(self, c):
-        return '0123456789 P'[self.board_buffer[c]]
+        return "0123456789 P"[self.board_buffer[c]]
 
     def get_display(self):
         return self.get_digit(2) + self.get_digit(3) + self.get_digit(4)
@@ -281,7 +292,6 @@ class Softub:
                 self.button_state = 0
                 self.button_timeout = calc_due_ticks_ms(self.button_ms)
 
-
     def get_buttons(self):
         if not self.top_buttons:
             return ""
@@ -294,7 +304,7 @@ class Softub:
             buttons.append("jets")
         if self.top_buttons & self.button_light:
             buttons.append("light")
-        return '|'.join(buttons)
+        return "|".join(buttons)
 
     # The default  callback just transmits the data unchanged
     # between the board and the display.

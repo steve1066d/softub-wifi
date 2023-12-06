@@ -1,6 +1,6 @@
 """Softub WiFi Adapter"""
 
-from mqtt import mqtt_connect, mqtt_poll
+from mqtt import mqtt_init, mqtt_poll, is_running
 import adafruit_ntp
 import board
 import busio
@@ -40,7 +40,7 @@ try:
 except Exception as e:
     log(e)
     writable = False
-    log("Could not write to nvram.  Using defaults")
+    log("Using USB with defaults")
     setpoint = {
         "target_temp": 102,
     }
@@ -53,27 +53,24 @@ A2 = board.IO3
 analog_in = AnalogIn(A2)
 dummy = AnalogIn(A1)
 pump_off_temp = None
-# This is the multiplier to use when reporting temperatures when the pump is off.
-# Less than 1 it will cause less and longer cycles, greater than 1, more cycles
-# None (or 1) it is unchanged.
 change_cycles = config["change_cycles"]
 calibration = config["calibration"]
 
 server = Server(None, None)
 pool = None
 
-wifi.radio.connect(
-    os.getenv("CIRCUITPY_WIFI_SSID"), os.getenv("CIRCUITPY_WIFI_PASSWORD")
-)
-log(f"Connected to {os.getenv('CIRCUITPY_WIFI_SSID')}")
-log(f"My IP address: {wifi.radio.ipv4_address}")
-hostname = os.getenv("CIRCUITPY_WEB_INSTANCE_NAME")
 
 if disable_httpd:
     log("Disabling httpd and mqtt")
 else:
     for i in range(3):
         try:
+            wifi.radio.connect(
+                os.getenv("CIRCUITPY_WIFI_SSID"), os.getenv("CIRCUITPY_WIFI_PASSWORD")
+            )
+            log(f"Connected to {os.getenv('CIRCUITPY_WIFI_SSID')}")
+            log(f"My IP address: {wifi.radio.ipv4_address}")
+            hostname = os.getenv("CIRCUITPY_WEB_INSTANCE_NAME")
             mdns_server = mdns.Server(wifi.radio)
             mdns_server.hostname = hostname
             mdns_server.advertise_service(
@@ -291,12 +288,6 @@ def webpage():
     """
     return html
 
-@server.route("/firmware")
-def firmware(request: Request):
-    os.rename("/code.py", "/code.bak")
-    os.sync()
-    microcontroller.reset()
-
 @server.route("/reboot")
 def reboot(request: Request):
     microcontroller.reset()
@@ -308,8 +299,10 @@ def debug(request: Request):
         "target": setpoint["target_temp"],
         "cpu": to_F(microcontroller.cpu.temperature),
         "board": softub.board_led_temp,
+        "raw":  softub.get_display(),
         "heat": softub.is_heat(),
         "filter": softub.is_filter(),
+        "running": is_running(),
         "output": report_temp,
     }
     return Response(request, json.dumps(value), content_type="text/json")
@@ -375,7 +368,7 @@ try:
     # board 1.0 has rx & tx backwards, so reverse them
     softub = Softub(board.IO8, board.IO9, board.RX, board.TX, callback, True)
     if pool:
-        mqtt_connect(pool, set_target, softub, power_state_callback)
+        mqtt_init(pool, set_target, softub, power_state_callback)
     if validate_analog:
         map_98 = _calibrate(98.0)
         map_104 = _calibrate(104.0)
@@ -397,7 +390,7 @@ try:
             temp_due = calc_due_ticks_sec(config["poll_seconds"])
             temp = get_temperature()
             set_current_temp(temp)
-            report_temp = current_temp
+            report_temp = current_temp + config["calibration"]
             if change_cycles and pump_off_temp and report_temp < pump_off_temp:
                 report_temp += (pump_off_temp - report_temp) * change_cycles
             if tt < 80:
@@ -418,4 +411,4 @@ except Exception as e:
     log(traceback.format_exception(e))
     time.sleep(30)
     log("restarting..")
-    supervisor.reload()
+    microcontroller.reset()
