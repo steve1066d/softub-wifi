@@ -64,26 +64,8 @@ def _message(client, topic, message):
             log(f"New message on topic {topic}: {message}")
 
 
-def _connect():
-    global _connected, _mqtt_due
-    if not _connected:
-        try:
-            mqtt_client.connect()
-            _mqtt_due = calc_due_ticks_sec(2)
-            mqtt_client.subscribe(temperature_command_topic)
-            mqtt_client.loop(0.5)
-            mqtt_client.subscribe(mode_command_topic)
-            mqtt_client.loop(0.5)
-            _connected = True
-        except Exception as e:
-            log(traceback.format_exception(e))
-            raise e
-    else:
-        mqtt_client.reconnect()
-
-
 def mqtt_init(pool, _set_temp, __softub, _callback):
-    global mqtt_client, fn_set_temp, _softub, callback
+    global mqtt_client, fn_set_temp, _softub, callback, _connected, _mqtt_due
     mqtt_client = MQTT.MQTT(
         broker=mqtt_broker,
         port=1883,
@@ -98,19 +80,33 @@ def mqtt_init(pool, _set_temp, __softub, _callback):
     mqtt_client.on_message = _message
     fn_set_temp = _set_temp
     _softub = __softub
-    _connect()
+    try:
+        mqtt_client.connect()
+        _mqtt_due = calc_due_ticks_sec(2)
+        mqtt_client.subscribe(temperature_command_topic)
+        mqtt_client.loop(0.5)
+        mqtt_client.subscribe(mode_command_topic)
+        mqtt_client.loop(0.5)
+        _connected = True
+    except Exception as e:
+        log(traceback.format_exception(e))
+        raise e
 
 
 def mqtt_poll(_temp, _set_temp):
-    global _mqtt_retry_due, _mqtt_due
+    global _mqtt_retry_due, _mqtt_due, _connected
     if not mqtt_client:
         return
     try:
         if _mqtt_retry_due and not is_due(_mqtt_retry_due):
             return
         _mqtt_retry_due = None
-        if not mqtt_client.is_connected():
-            _connect()
+        if not _connected or not mqtt_client.is_connected():
+            mqtt_client.reconnect()
+            if mqtt_client.is_connected:
+                _connected = True
+                log("reconnected")
+
         # Poll the message queue
         mqtt_client.loop()
         _publish_if_changed(button_feed, _softub.get_buttons())
@@ -121,5 +117,6 @@ def mqtt_poll(_temp, _set_temp):
             _publish_if_changed(current_temperature_topic, round(_temp, 1), True)
             _mqtt_due = calc_due_ticks_sec(MQTT_POLL_SEC)
     except Exception as e:
+        _connected = False
         _mqtt_retry_due = calc_due_ticks_sec(300)
         log(traceback.format_exception(e))

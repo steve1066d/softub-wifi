@@ -53,11 +53,14 @@ A2 = board.IO3
 analog_in = AnalogIn(A2)
 dummy = AnalogIn(A1)
 pump_off_temp = None
-change_cycles = config["change_cycles"]
 calibration = config["calibration"]
-
+softub_controlled = config["softub_controlled"]
+hysteresis = config["hysteresis"]
 server = Server(None, None)
 pool = None
+
+LOW_TEMP = 75
+HIGH_TEMP = 106
 
 
 if disable_httpd:
@@ -168,8 +171,9 @@ def callback():
             elif softub.board_led_temp > math.floor(tt):
                 change = softub.button_down
             if change and (softub.board_led_temp < 104 or tt < 104):
-                # Only adjust the board setting if it isn't already at the min or max.
-                if change > 0 or softub.board_led_temp > 80:
+                # Only adjust the board setting if it isn't already at the min or max,
+                # and only if the heat cycles are softub_controlled
+                if softub_controlled and (change > 0 or softub.board_led_temp > 80):
                     softub.click_button(change)
                     top_buttons_ms = softub.top_buttons_ms
                     log("clicked", change)
@@ -304,6 +308,7 @@ def debug(request: Request):
         "filter": softub.is_filter(),
         "running": is_running(),
         "output": report_temp,
+        "interval": softub.led_interval,
     }
     return Response(request, json.dumps(value), content_type="text/json")
 
@@ -364,6 +369,29 @@ def power_state_callback(on):
     else:
         pump_off_temp = None
 
+
+def calc_report_softub(report_temp, tt):
+    if tt < 80:
+        # The minimum that the board can be set to is 80, so if cooler
+        # is desired, change the reported temp
+        report_temp += (80 - tt)
+    else:
+        # Adjusts the reported temp to account for > 104 temps,
+        # and fraction of degree settings.
+        report_temp -= (tt - int(min(104, tt)))
+    return report_temp
+
+def calc_report_temp(temp, tt):
+    if softub_controlled:
+        return calc_report_softub(temp, tt)
+    if not is_running() and temp < tt - hysteresis:
+        report_temp = LOW_TEMP
+    elif is_running() and temp > tt:
+        report_temp = HIGH_TEMP
+    else:
+        report_temp = LOW_TEMP if is_running() else HIGH_TEMP
+    return report_temp
+
 try:
     # board 1.0 has rx & tx backwards, so reverse them
     softub = Softub(board.IO8, board.IO9, board.RX, board.TX, callback, True)
@@ -390,17 +418,8 @@ try:
             temp_due = calc_due_ticks_sec(config["poll_seconds"])
             temp = get_temperature()
             set_current_temp(temp)
-            report_temp = current_temp + config["calibration"]
-            if change_cycles and pump_off_temp and report_temp < pump_off_temp:
-                report_temp += (pump_off_temp - report_temp) * change_cycles
-            if tt < 80:
-                # The minimum that the board can be set to is 80, so if cooler
-                # is desired, change the reported temp
-                report_temp += (80 - tt)
-            else:
-                # Adjusts the reported temp to account for > 104 temps,
-                # and fraction of degree settings.
-                report_temp -= (tt - int(min(104, tt)))
+            report_temp = current_temp
+            report_temp = calc_report_temp(report_temp, tt)
             set_temperature(report_temp)
         softub.poll()
         if pool:

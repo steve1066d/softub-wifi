@@ -1,6 +1,6 @@
 import busio
 import supervisor
-from ticks import calc_due_ticks_ms, calc_due_ticks_sec, is_due
+from ticks import calc_due_ticks_ms, calc_due_ticks_sec, is_due, ticks_diff
 from log import log
 
 
@@ -14,7 +14,7 @@ from log import log
  "IPS": (1P5) Insufficent power supply.  The voltage is not high enough.
  "P01":  Insufficient Heating. Called if the pump has been running 4 hours but has not
          had a 1 degree change in temperature.
- "SP1": (5P1) Special temp mode.  This will alternate between 5P1 and the actual temp
+ "SP1": (5P1) Special temp mode.  This will alternate between SP1 and the actual value
         every 5 seconds.
 
  Special button presses (these are passed through but not specifically handled)
@@ -23,7 +23,8 @@ from log import log
  Economy mode:  press and hold light and up for 10 seconds.  It will only run once a
                 day to bring up to temp
  Special temperature:  (Used to set temp to 105 or 106 on newer tubs).  Press and hold
-                       jets and up buttons for 10 seconds.
+                       jets and up buttons for 10 seconds to raise to 105.  Do it again
+                       to raise it to 106.
 """
 
 
@@ -43,6 +44,9 @@ class Softub:
     special_message = False
     # a short timer to give the controller a chance to send out the new temperature
     set_temp_ready = calc_due_ticks_ms(1)
+    # Debugging, used to determine how often the led should update
+    last_update_to_led = 0
+    led_interval = 0
 
     # How often the status should be updated
     polling_ms = 333
@@ -160,6 +164,8 @@ class Softub:
                     + str(raw[0])
                 )
                 return
+            self.led_interval = ticks_diff(supervisor.ticks_ms(), self.last_update_to_led)
+            self.last_update_to_led = supervisor.ticks_ms()
             # There a P message or blank, but not " P "
             self.special_message = (
                 has_p
