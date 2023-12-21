@@ -22,6 +22,7 @@ from adafruit_ads1x15.analog_in import AnalogIn as AnalogInI2C
 from analogio import AnalogIn
 from adafruit_simplemath import map_unconstrained_range
 import adafruit_ad569x
+import adafruit_mcp4725
 import traceback
 import storage
 from log import log
@@ -94,7 +95,7 @@ else:
             break
         except Exception as e:
             log(traceback.format_exception(e))
-            time.sleep(10)
+            time.sleep(30)
 
 top_buttons_ms = 0
 repeating = None
@@ -124,10 +125,17 @@ try:
     # this dac is already accurate
     validate_analog = None
 except Exception:
-    log("Could not find i2c dac, using internal")
-    # analog_out = AnalogOut(A1)
-    analog_out = None
-    max_analog_out = 3.3
+    try:
+        analog_out = adafruit_mcp4725.MCP4725(i2c)
+        log("i2c DAC found")
+        # this dac is already accurate
+        validate_analog = None
+        max_analog_out = 3.3
+    except Exception:
+        log("Could not find i2c dac, using internal")
+        # analog_out = AnalogOut(A1)
+        analog_out = None
+        max_analog_out = 3.3
 
 
 def callback():
