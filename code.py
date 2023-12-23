@@ -49,9 +49,17 @@ except Exception as e:
 A0 = board.IO1
 A1 = board.IO2
 A2 = board.IO3
+SCL = board.IO6
+SDA = board.IO5
+MISO = board.IO8
+MOSI = board.IO9
+RX = board.RX
+TX = board.TX
+
 # there seems to be a default pullup resistor that is interfering with this,
 # so do this even if we we are using an i2c a2d.
 analog_in = AnalogIn(A2)
+board_analog_in = analog_in
 dummy = AnalogIn(A1)
 pump_off_temp = None
 calibration = config["calibration"]
@@ -99,7 +107,6 @@ else:
 
 top_buttons_ms = 0
 repeating = None
-temp_reads = []
 set_point_timeout = 0
 
 # analog_out = AnalogOut(board.A1)
@@ -110,7 +117,7 @@ report_temp = 0
 
 validate_analog = None
 try:
-    i2c = busio.I2C(board.IO6, board.IO5)  # uses board.SCL and board.SDA
+    i2c = busio.I2C(SCL, SDA)  # uses board.SCL and board.SDA
     ads = ADS.ADS1115(i2c)
     analog_in = AnalogInI2C(ads, ADS.P0)  # 0x48
     log("i2c A2D found")
@@ -226,14 +233,24 @@ def get_temperature() -> float:
         x = analog_in.value / 65535 * 3.3 * 100
     return x + calibration
 
+def board_temp():
+    return board_analog_in.value / 65535 * 3.3 * 100 + calibration
 
-def set_current_temp(temp: float):
-    global temp_reads, current_temp
-    temp_reads.append(temp)
-    if len(temp_reads) > 10:
-        temp_reads.pop(0)
-    current_temp = sum(temp_reads) / len(temp_reads)
-    return current_temp
+class Average:
+    def __init__(self, length):
+        self.length = length
+        self.data = []
+
+    def set(self, value):
+        self.data.append(value)
+        if len(self.data) > self.length:
+            self.data.pop(0)
+
+    def get(self):
+        if self.data:
+            return sum(self.data) / len(self.data)
+        else:
+            return None
 
 
 def save_config():
@@ -317,6 +334,7 @@ def debug(request: Request):
         "running": is_running(),
         "output": report_temp,
         "interval": softub.led_interval,
+        "board_d": board_avg.get() - current_temp,
     }
     return Response(request, json.dumps(value), content_type="text/json")
 
@@ -402,7 +420,7 @@ def calc_report_temp(temp, tt):
 
 try:
     # board 1.0 has rx & tx backwards, so reverse them
-    softub = Softub(board.IO8, board.IO9, board.RX, board.TX, callback, True)
+    softub = Softub(MISO, MOSI, RX, TX, callback, True)
     if pool:
         mqtt_init(pool, set_target, softub, power_state_callback)
     if validate_analog:
@@ -420,15 +438,20 @@ try:
     temp_due = calc_due_ticks_sec(config["poll_seconds"])
     uart_clock = 0
 
+    board_avg = Average(10)
+    temp_reads = Average(10)
+
     while True:
         tt = setpoint["target_temp"]
         if is_due(temp_due):
             temp_due = calc_due_ticks_sec(config["poll_seconds"])
             temp = get_temperature()
-            set_current_temp(temp)
+            temp_reads.set(temp)
+            current_temp = temp_reads.get()
             report_temp = current_temp
             report_temp = calc_report_temp(report_temp, tt)
             set_temperature(report_temp)
+            board_avg.set(board_temp())
         softub.poll()
         if pool:
             server.poll()

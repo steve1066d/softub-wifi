@@ -8,6 +8,9 @@ lines = 0
 try:
     storage.remount("/", False)
     os.rename("/static/debug.log", "/static/debug.bak")
+except Exception:
+    pass
+try:
     logfile = open("/static/debug.log", "a")
 except Exception:
     pass

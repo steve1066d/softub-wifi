@@ -1,6 +1,6 @@
 import busio
 import supervisor
-from ticks import calc_due_ticks_ms, calc_due_ticks_sec, is_due, ticks_diff
+from ticks import calc_due_ticks_ms, calc_due_ticks_sec, is_due, ticks_diff, ticks_add
 from log import log
 
 
@@ -50,6 +50,9 @@ class Softub:
 
     # How often the status should be updated
     polling_ms = 333
+    # if it is this close to the poll time, wait instead of returning
+    wait_ms = 50
+    polling_ms -= wait_ms
     button_ms = 200
     debug_buttons = None
     debug_board = str(board_led_temp)
@@ -164,7 +167,9 @@ class Softub:
                     + str(raw[0])
                 )
                 return
-            self.led_interval = ticks_diff(supervisor.ticks_ms(), self.last_update_to_led)
+            self.led_interval = ticks_diff(
+                supervisor.ticks_ms(), self.last_update_to_led
+            )
             self.last_update_to_led = supervisor.ticks_ms()
             # There a P message or blank, but not " P "
             self.special_message = (
@@ -320,11 +325,14 @@ class Softub:
         self.button_timeout = self.due
 
     def poll(self):
-        self.read_buttons()
-        self.read_board()
         if is_due(self.jet_timeout):
             self.jet_timeout = 0
         if is_due(self.due):
+            self.due = ticks_add(self.due, self.wait_ms)
+            # This is rather time-sensitive, so if an update is due in under 50ms, wait
+            while not is_due(self.due):
+                self.read_buttons()
+                self.read_board()
             while is_due(self.due):
                 self.due += self.polling_ms
             self.last_tick = supervisor.ticks_ms()
@@ -334,3 +342,6 @@ class Softub:
                 self.callback()
             self.fn_top_update()
             self.fn_board_update()
+        else:
+            self.read_buttons()
+            self.read_board()
