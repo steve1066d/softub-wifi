@@ -27,6 +27,7 @@ states = {}
 _connected = False
 _mqtt_due = 0
 _mqtt_retry_due = None
+_softub = None
 # We use the mode as an indication if the hot tub is on.  This can be turned on or off
 # by monitoring the power. If this or the board is in filter or heat mode, then this
 # will be on.
@@ -34,7 +35,7 @@ power_state = False
 callback = None
 
 def is_running():
-    return _softub.is_running() or power_state
+    return _softub and _softub.is_running() or power_state
 
 
 def _publish_if_changed(topic, value, persistent=False):

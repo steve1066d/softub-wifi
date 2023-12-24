@@ -1,12 +1,20 @@
 import time
 import storage
 import os
+from ticks import calc_due_ticks_sec, is_due
+
 
 logfile = None
 lines = 0
+cache = ""
+due = calc_due_ticks_sec(60)
 
 try:
     storage.remount("/", False)
+    try:
+        os.remove("/static/debug.bak")
+    except Exception:
+        pass
     os.rename("/static/debug.log", "/static/debug.bak")
 except Exception:
     pass
@@ -15,18 +23,35 @@ try:
 except Exception:
     pass
 
-def log(*x):
-    global lines, logfile
-    l = time.localtime()
-    time_str = "%4d-%02d-%02d %02d:%02d:%02d " % (l[0], l[1], l[2], l[3], l[4], l[5])
-    line =  time_str + ' '.join(map(str, x))
-    if logfile:
-        logfile.write(f"{line}\n")
-        lines += 1
+def _write():
+    global cache, lines, logfile, due
+    if len(cache):
+        logfile.write(cache)
+        cache = ""
+        logfile.flush()
         if lines > 5000:
+            lines = 0
             logfile.close()
             os.rename("/static/debug.log", "/static/debug.bak")
             logfile = open("/static/debug.log", "a")
-        logfile.flush()
+
+
+def log(*x):
+    global lines, logfile, cache
+    l = time.localtime()
+    time_str = "%4d-%02d-%02d %02d:%02d:%02d " % (l[0], l[1], l[2], l[3], l[4], l[5])
+    line = time_str + ' '.join(map(str, x))
+    if logfile:
+        cache += f"{line}\n"
+        lines += 1
+        if len(cache) > 2048:
+            _write()
     else:
         print(line)
+
+def log_flush():
+    global due
+    if logfile:
+        if is_due(due):
+            due = calc_due_ticks_sec(60)
+            _write()

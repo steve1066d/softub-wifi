@@ -25,7 +25,7 @@ import adafruit_ad569x
 import adafruit_mcp4725
 import traceback
 import storage
-from log import log
+from log import log, log_flush
 import config
 
 disable_httpd = False
@@ -103,7 +103,7 @@ else:
             break
         except Exception as e:
             log(traceback.format_exception(e))
-            time.sleep(30)
+            time.sleep(20)
 
 top_buttons_ms = 0
 repeating = None
@@ -115,35 +115,33 @@ current_temp = None
 # report this temp to the board
 report_temp = 0
 
-validate_analog = None
+validate_in = None
+validate_analog = False
 try:
     i2c = busio.I2C(SCL, SDA)  # uses board.SCL and board.SDA
     ads = ADS.ADS1115(i2c)
     analog_in = AnalogInI2C(ads, ADS.P0)  # 0x48
     log("i2c A2D found")
-    validate_analog = AnalogInI2C(ads, ADS.P1)
+    validate_in = AnalogInI2C(ads, ADS.P1)
 except Exception as e:
     log(e)
     log("Could not find i2c adc, using internal")
 try:
     analog_out = adafruit_ad569x.Adafruit_AD569x(i2c)  # 0x4C
-    log("i2c DAC found")
+    log("ad569x DAC found")
     max_analog_out = 2.5
-    # this dac is already accurate
-    validate_analog = None
 except Exception:
     try:
         analog_out = adafruit_mcp4725.MCP4725(i2c)
-        log("i2c DAC found")
+        log("mcp4725 DAC found")
         # this dac is already accurate
-        validate_analog = None
         max_analog_out = 3.3
     except Exception:
         log("Could not find i2c dac, using internal")
         # analog_out = AnalogOut(A1)
         analog_out = None
         max_analog_out = 3.3
-
+        validate_analog = validate_in is not None
 
 def callback():
     global top_buttons_ms, set_point_timeout, repeating
@@ -216,13 +214,13 @@ def set_target(deg: float):
     global set_point_timeout
     if not deg:
         raise Exception()
+    deg = max(deg, config["minimum_temp"])
+    deg = min(deg, config["maximum_temp"])
+    set_point_timeout = calc_due_ticks_sec(config["show_settings_seconds"])
     if setpoint["target_temp"] == deg:
         return
     log(f"Changing setting to {deg}")
-    deg = max(deg, config["minimum_temp"])
-    deg = min(deg, config["maximum_temp"])
     setpoint["target_temp"] = deg
-    set_point_timeout = calc_due_ticks_sec(config["show_settings_seconds"])
     save_config()
 
 
@@ -317,8 +315,12 @@ def webpage():
     """
     return html
 
-@server.route("/reboot")
-def reboot(request: Request):
+@server.route("/reload")
+def reload(request: Request):
+    supervisor.reload()
+
+@server.route("/reset")
+def reset(request: Request):
     microcontroller.reset()
 
 @server.route("/debug")
@@ -336,6 +338,8 @@ def debug(request: Request):
         "interval": softub.led_interval,
         "board_d": board_avg.get() - current_temp,
     }
+    if validate_in and hasattr(validate_in, "voltage"):
+        value["validate_in", validate_in.voltage * 100 + calibration]
     return Response(request, json.dumps(value), content_type="text/json")
 
 @server.route("/")
@@ -378,8 +382,8 @@ def _calibrate(value):
         old_error = error
         analog_out.value = int((value + delta) / 3.3 * 655.35)
         time.sleep(0.1)
-        new_value = validate_analog.voltage * 100 + delta
-        new_value += validate_analog.voltage * 100 + delta
+        new_value = validate_in.voltage * 100 + delta
+        new_value += validate_in.voltage * 100 + delta
         new_value /= 2
         error = value - new_value
         old_delta = delta
@@ -430,7 +434,7 @@ try:
     else:
         map_98 = 98
         map_104 = 104
-        log("Not using i2c adc with internal dac, no calibration")
+        log("No DAC calibration needed")
 
     if config["unit"] == "C":
         config["target_temp"] = to_F(config["target_temp"])
@@ -452,13 +456,15 @@ try:
             report_temp = calc_report_temp(report_temp, tt)
             set_temperature(report_temp)
             board_avg.set(board_temp())
+            log_flush()
         softub.poll()
         if pool:
             server.poll()
-            if current_temp:
+            if current_temp and pool:
                 mqtt_poll(current_temp, tt)
 except Exception as e:
     log(traceback.format_exception(e))
+    log_flush()
     time.sleep(30)
     log("restarting..")
     microcontroller.reset()
