@@ -333,8 +333,7 @@ class Softub:
             while not is_due(self.due):
                 self.read_buttons()
                 self.read_board()
-            while is_due(self.due):
-                self.due += self.polling_ms
+            self.due = ticks_add(self.due, self.polling_ms)
             self.last_tick = supervisor.ticks_ms()
             if self.display_callback:
                 self.display_callback()
