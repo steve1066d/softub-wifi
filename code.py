@@ -27,6 +27,7 @@ import traceback
 import storage
 from log import log, log_flush
 import config
+import sys
 
 disable_httpd = False
 
@@ -113,7 +114,7 @@ set_point_timeout = 0
 
 current_temp = None
 # report this temp to the board
-report_temp = 0
+report_temp = 106
 
 validate_in = None
 validate_analog = False
@@ -323,6 +324,10 @@ def reload(request: Request):
 def reset(request: Request):
     microcontroller.reset()
 
+@server.route("/stop")
+def stop(request: Request):
+    sys.exit()
+
 @server.route("/debug")
 def debug(request: Request):
     value = {
@@ -339,7 +344,7 @@ def debug(request: Request):
         "board_d": board_avg.get() - current_temp,
     }
     if validate_in and hasattr(validate_in, "voltage"):
-        value["validate_in", validate_in.voltage * 100 + calibration]
+        value["validate_in"] = validate_in.voltage * 100
     return Response(request, json.dumps(value), content_type="text/json")
 
 @server.route("/")
