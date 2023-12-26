@@ -28,6 +28,9 @@ import storage
 from log import log, log_flush
 import config
 import sys
+from microcontroller import watchdog
+from watchdog import WatchDogMode
+
 
 disable_httpd = False
 
@@ -449,6 +452,8 @@ try:
 
     board_avg = Average(10)
     temp_reads = Average(10)
+    watchdog.timeout = 5
+    watchdog.mode = WatchDogMode.RAISE
 
     while True:
         tt = setpoint["target_temp"]
@@ -462,6 +467,7 @@ try:
             set_temperature(report_temp)
             board_avg.set(board_temp())
             log_flush()
+            watchdog.feed()
         softub.poll()
         if pool:
             server.poll()

@@ -51,7 +51,7 @@ class Softub:
     # How often the status should be updated
     polling_ms = 333
     # if it is this close to the poll time, wait instead of returning
-    wait_ms = 50
+    wait_ms = 10
     polling_ms -= wait_ms
     button_ms = 200
     debug_buttons = None
@@ -329,10 +329,11 @@ class Softub:
             self.jet_timeout = 0
         if is_due(self.due):
             self.due = ticks_add(self.due, self.wait_ms)
-            # This is rather time-sensitive, so if an update is due in under 50ms, wait
+            # This is rather time-sensitive, so if an update is due in very soonwait
             while not is_due(self.due):
-                self.read_buttons()
-                self.read_board()
+                pass
+            self.read_buttons()
+            self.read_board()
             self.due = ticks_add(self.due, self.polling_ms)
             self.last_tick = supervisor.ticks_ms()
             if self.display_callback:
