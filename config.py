@@ -28,6 +28,8 @@ config = {
     # To tell the controller to turn on or off.  The board may still run othertimes, such as
     # when it is time for a filter run
     "softub_controlled": False,
+    # If the Softub controller board is replaced with a simple relay, set this to True
+    "replacement_controller": False,
     # The degrees below which the pump should turn on. Used if softub_controlled is False
     "hysteresis": 4
 }

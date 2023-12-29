@@ -1,6 +1,7 @@
 import busio
 import supervisor
 from ticks import calc_due_ticks_ms, calc_due_ticks_sec, is_due, ticks_diff, ticks_add
+import time
 from log import log
 
 
@@ -97,9 +98,12 @@ class Softub:
         display_tenths=True,
         p_style=False,
     ):
-        self.uart_board = busio.UART(
-            board_tx, board_rx, baudrate=2400, receiver_buffer_size=13
-        )
+        if board_tx or board_rx:
+            self.uart_board = busio.UART(
+                board_tx, board_rx, baudrate=2400, receiver_buffer_size=13
+            )
+        else:
+            self.uart_board = None
         self.uart_top = busio.UART(
             top_tx, top_rx, baudrate=2400, receiver_buffer_size=1
         )
@@ -140,7 +144,7 @@ class Softub:
 
     # Updates from the board to the LED
     def read_board(self):
-        while self.uart_board.in_waiting > 6:
+        while self.uart_board and self.uart_board.in_waiting > 6:
             # If we are behind, catch up
             while self.uart_board.in_waiting > 6:
                 raw = self.uart_board.read(7)
@@ -198,6 +202,9 @@ class Softub:
 
     def get_display(self):
         return self.get_digit(2) + self.get_digit(3) + self.get_digit(4)
+
+    def set_heat(self, value):
+        self.board_buffer[1] = 0x20 if value else 0x00
 
     def is_heat(self):
         return self.board_buffer[1] & 0x20
@@ -284,7 +291,8 @@ class Softub:
 
     def fn_board_update(self):
         encoded = (self.button_state << 4) | (self.button_state ^ 0x0F)
-        self.uart_board.write(bytes([encoded]))
+        if self.uart_board:
+            self.uart_board.write(bytes([encoded]))
         if self.button_jets & self.button_state:  # if the jets button was pressed
             # if the jet state is on, clear it, otherwise set it.
             if self.jet_timeout:
@@ -329,7 +337,7 @@ class Softub:
             self.jet_timeout = 0
         if is_due(self.due):
             self.due = ticks_add(self.due, self.wait_ms)
-            # This is rather time-sensitive, so if an update is due in very soonwait
+            # This is rather time-sensitive, so if an update is due in very soon, wait
             while not is_due(self.due):
                 pass
             self.read_buttons()

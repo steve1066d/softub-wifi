@@ -2,7 +2,9 @@ import os
 from ticks import calc_due_ticks_sec, is_due
 import traceback
 import adafruit_minimqtt.adafruit_minimqtt as MQTT
-from log import log
+from log import log, log_flush
+import wifi
+import microcontroller
 
 MQTT_POLL_SEC = 60
 
@@ -103,6 +105,10 @@ def mqtt_poll(_temp, _set_temp):
             return
         _mqtt_retry_due = None
         if not _connected or not mqtt_client.is_connected():
+            if not wifi.radio.ping(wifi.radio.ipv4_gateway):
+                log("WiFi not connected.  Restarting")
+                log_flush()
+                microcontroller.reset()
             mqtt_client.reconnect()
             if mqtt_client.is_connected:
                 _connected = True

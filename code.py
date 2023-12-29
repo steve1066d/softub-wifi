@@ -4,6 +4,7 @@ from mqtt import mqtt_init, mqtt_poll, is_running
 import adafruit_ntp
 import board
 import busio
+import digitalio
 import json
 import math
 import mdns
@@ -28,9 +29,6 @@ import storage
 from log import log, log_flush
 import config
 import sys
-from microcontroller import watchdog
-from watchdog import WatchDogMode
-
 
 disable_httpd = False
 
@@ -60,6 +58,13 @@ MOSI = board.IO9
 RX = board.RX
 TX = board.TX
 
+relay = None
+if config["replacement_controller"]:
+    relay = digitalio.DigitalInOut(MISO)
+    relay.direction = digitalio.Direction.OUTPUT
+    MISO = None
+    MOSI = None
+
 # there seems to be a default pullup resistor that is interfering with this,
 # so do this even if we we are using an i2c a2d.
 analog_in = AnalogIn(A2)
@@ -72,8 +77,8 @@ hysteresis = config["hysteresis"]
 server = Server(None, None)
 pool = None
 
-LOW_TEMP = 75
-HIGH_TEMP = 106
+LOW_TEMP = 50
+HIGH_TEMP = 115
 
 
 if disable_httpd:
@@ -428,6 +433,9 @@ def calc_report_temp(temp, tt):
         report_temp = HIGH_TEMP
     else:
         report_temp = LOW_TEMP if is_running() else HIGH_TEMP
+    if relay:
+        relay.value = report_temp == LOW_TEMP
+        softub.set_heat(report_temp == LOW_TEMP)
     return report_temp
 
 try:
@@ -452,8 +460,6 @@ try:
 
     board_avg = Average(10)
     temp_reads = Average(10)
-    watchdog.timeout = 5
-    watchdog.mode = WatchDogMode.RAISE
 
     while True:
         tt = setpoint["target_temp"]
@@ -467,7 +473,6 @@ try:
             set_temperature(report_temp)
             board_avg.set(board_temp())
             log_flush()
-            watchdog.feed()
         softub.poll()
         if pool:
             server.poll()
