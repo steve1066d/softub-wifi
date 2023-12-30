@@ -26,7 +26,7 @@ import adafruit_ad569x
 import adafruit_mcp4725
 import traceback
 import storage
-from log import log, log_flush
+from log import log, log_flush, log_close
 import config
 import sys
 
@@ -480,7 +480,8 @@ try:
                 mqtt_poll(current_temp, tt)
 except Exception as e:
     log(traceback.format_exception(e))
-    log_flush()
+    log_close()
     time.sleep(30)
     log("restarting..")
     microcontroller.reset()
+
