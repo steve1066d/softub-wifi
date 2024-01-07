@@ -29,6 +29,7 @@ import storage
 from log import log, log_flush, log_close
 import config
 import sys
+from median import MedianTracker
 
 disable_httpd = False
 
@@ -243,23 +244,6 @@ def get_temperature() -> float:
 def board_temp():
     return board_analog_in.value / 65535 * 3.3 * 100 + calibration
 
-class Average:
-    def __init__(self, length):
-        self.length = length
-        self.data = []
-
-    def set(self, value):
-        self.data.append(value)
-        if len(self.data) > self.length:
-            self.data.pop(0)
-
-    def get(self):
-        if self.data:
-            return sum(self.data) / len(self.data)
-        else:
-            return None
-
-
 def save_config():
     global clock
     log("Saving config")
@@ -458,8 +442,8 @@ try:
     temp_due = calc_due_ticks_sec(config["poll_seconds"])
     uart_clock = 0
 
-    board_avg = Average(10)
-    temp_reads = Average(10)
+    board_avg = MedianTracker(11)
+    temp_reads = MedianTracker(11)
 
     while True:
         tt = setpoint["target_temp"]

@@ -1,7 +1,6 @@
 import busio
 import supervisor
 from ticks import calc_due_ticks_ms, calc_due_ticks_sec, is_due, ticks_diff, ticks_add
-import time
 from log import log
 
 
@@ -75,6 +74,9 @@ class Softub:
     # This is the amount of time left that the pump will be running after the jets
     # button is pressed.
     jet_timeout = 0
+
+    # This is used to catch when a jet button is released.
+    jet_pressed = False
 
     # If this is non-zero it indicates that the temperature returned is the set temp
     end_show_setting_seconds = 0
@@ -287,15 +289,18 @@ class Softub:
         return self.debug_board
 
     def fn_board_update(self):
-        encoded = (self.button_state << 4) | (self.button_state ^ 0x0F)
         if self.uart_board:
+            encoded = (self.button_state << 4) | (self.button_state ^ 0x0F)
             self.uart_board.write(bytes([encoded]))
         if self.button_jets & self.button_state:  # if the jets button was pressed
             # if the jet state is on, clear it, otherwise set it.
-            if self.jet_timeout:
+            if self.jet_timeout and not self.jet_pressed:
                 self.jet_timeout = 0
             else:
                 self.jet_timeout = calc_due_ticks_sec(60 * 20)
+                self.jet_pressed = True
+        if not self.button_state:
+            self.jet_pressed = False
         if self.button_up == self.button_state or self.button_down == self.button_state:
             # Give the board 1/3 second to display the set temperature.
             self.board_led_temp = None
