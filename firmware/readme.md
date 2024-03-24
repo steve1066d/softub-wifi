@@ -90,8 +90,8 @@ Softub. Doing so will not save any changes you have made.
 If you want the system to be set to a different temperature on startup, change 
 this.  Though normally this is changed automatically when the setting changes.
 
-#### PP1:
-Probe offset. This is tenths of a degree (or 20th of a degree in C) to offset 
+#### PP1: Probe offset.
+This is tenths of a degree (or 20th of a degree in C) to offset 
 the probe setting, with 10.0  as the base. So a setting of "9.0" will cause the 
 temperature to be reported 1 degree colder.  A setting of 12.0 will be 2 
 degrees warmer.  Values under 10.0 cause pool temps to get hotter because it is 
@@ -190,9 +190,9 @@ units (with a + and - instead of an up and down arrows) cannot display decimal
 points).
 
 #### PP8 Mode.  
-This does not need to be edited, as it can be changed with the documented commands
-00 = Startup in normal mode
-01 = Startup in economy mode
+This does not need to be edited, as it can be changed with the documented commands  
+00 = Startup in normal mode  
+01 = Startup in economy mode  
 02 = Startup in overnight mode
 
 
@@ -209,14 +209,14 @@ but this is an option for someone confident on their installation skills.  You
 can either replace all the buttons or just the broken buttons.  Here's the 
 connection placements:
 
-JP3: Jets
-JP4: Lights
-JP5: Up
-JP6: Down
+JP3: Jets  
+JP4: Lights  
+JP5: Up  
+JP6: Down  
 
 ### Sonoff Integration
-There is a planned future integration with Sonoff Elite, which will allow wifi
+There is a planned future integration with Sonoff Elite, which will allow Wifi
 operation and integration with digital assistants Alexa and Google Home. It will
 report the tub temperature back to Sonoff, and allow Sonoff to control the Softub
 while still allowing the tub's control panel to work normally.  This will be done
-with a small adapter board that connects to J9.
+with a small adapter board that connects to J9 jumper on the control board.
